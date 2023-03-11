@@ -287,7 +287,6 @@ fn format_parsable_output(
     name: &String,
     code: u64,
     operation: &str,
-    // operation: &'static str,
     arg1: &String,
     arg2: &String,
 ) -> String {
@@ -348,7 +347,12 @@ fn _ec_error_invalid_config(key: &str) -> std::io::Error {
         .as_str())
 }
 
-fn _ec_replace_variables_in_string(pattern: &Regex, format: &String, source: &String, vars: &HashMap<String, String>) -> String {
+fn _ec_replace_variables_in_string(
+    pattern: &Regex, 
+    format: &String, 
+    source: &String, 
+    vars: &HashMap<String, String>,
+) -> String {
     let mut result = String::from(source);
 
     // mimick shell by replacing undefined variables with the empty string:
@@ -372,7 +376,11 @@ fn _ec_replace_variables_in_string(pattern: &Regex, format: &String, source: &St
     String::from(result)
 }
 
-fn _ec_replace_markers_in_string(source: &String, user_home: &PathBuf, config_file_dir: &PathBuf) -> String {
+fn _ec_replace_markers_in_string(
+    source: &String, 
+    user_home: &PathBuf, 
+    config_file_dir: &PathBuf,
+) -> String {
     let mut result = String::from(source);
 
     for (mkey, mlist) in DIR_MARKERS.clone().iter() {
@@ -431,7 +439,11 @@ fn _ec_add_trailing_slashes(path: &String) -> String {
 }
 
 // actual function
-fn extract_config(config_file: &PathBuf, verbose: bool, parsable_output: bool) -> std::io::Result<(CopyJobGlobalConfig, Vec<CopyJobConfig>)> {
+fn extract_config(
+    config_file: &PathBuf, 
+    verbose: bool, 
+    parsable_output: bool,
+) -> std::io::Result<(CopyJobGlobalConfig, Vec<CopyJobConfig>)> {
     // here we also set default values
     let mut global_config = CopyJobGlobalConfig {
         active_jobs: Vec::new(),
@@ -484,7 +496,10 @@ fn extract_config(config_file: &PathBuf, verbose: bool, parsable_output: bool) -
             config_map = CfgMap::from_toml(toml_text);
         }
         _ => {
-            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, format_err_parsable(ERR_INVALID_CONFIG_FILE)));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData, 
+                format_err_parsable(ERR_INVALID_CONFIG_FILE)
+            ));
         }
     }
 
@@ -968,6 +983,11 @@ fn list_files_matching(
             .case_insensitive(!case_sensitive)
             .build()
             .unwrap_or(RE_MATCH_NO_FILE.clone());
+    
+    // excluded directory is not matched as ^$, to also ignore subdirectories
+    // of the excluded directory (this solution is working for now)
+    // TODO: check that no other directories containing the excluded name are
+    //       not excluded as well (may have to be wrapped in path separators?)
     let excludedir_match = RegexBuilder::new(
         String::from(format!("{excludedir_pattern}")).as_str())
             .case_insensitive(!case_sensitive)
@@ -985,9 +1005,14 @@ fn list_files_matching(
             if !entry.file_type().is_dir() && !(follow_symlinks && entry.file_type().is_symlink()) {
                 let mut dir_pathbuf = PathBuf::from(entry.path());
                 let dir_name = if dir_pathbuf.pop() {
-                    dir_pathbuf.to_str().unwrap_or("*").replace(&search_dir.to_str().unwrap(), "")
-                } else { String::from("*") };   // a value of '*' as directory reports an error (reserved on both Unix&Win)
-                if dir_name != "*" && !excludedir_match.is_match(&dir_name.as_str()) {    // intentionally no ^$ wrapping
+                    dir_pathbuf.to_str()
+                        .unwrap_or("*")
+                        .replace(&search_dir.to_str().unwrap(), "")
+                } else {
+                    // a value of '*' as directory reports an error ('reserved' on both Unix&Win)
+                    String::from("*") 
+                };   
+                if dir_name != "*" && !excludedir_match.is_match(&dir_name.as_str()) {
                     if let Some(file_name) = entry.path().file_name() {
                         if include_match.is_match(&file_name.to_str().unwrap_or(""))
                            && !exclude_match.is_match(&file_name.to_str().unwrap_or("")) {
@@ -1111,7 +1136,8 @@ fn copyfile (
                     // in case of error check whether or not the destination
                     // directory exists, and if not create it when instructed
                     // to do so
-                    // TODO: double check this part!!! If destdir is found a CANNOT_CREATE_DIR error is propagated
+                    // TODO: double check this part!!! If destdir is found a 
+                    //       CANNOT_CREATE_DIR error is propagated
                     let mut destination_dir = PathBuf::from(&destination_path);
                     if !destination_dir.pop() {
                         return FileOpOutcome::Error(FOERR_CANNOT_CREATE_DIR);
@@ -1221,7 +1247,14 @@ fn removefile (
 /// suitable messages when needed.
 ///
 
-fn _format_message_rsj(parsable_output: bool, job: &String, operation: &str, code: u64, source: &PathBuf, destination: &PathBuf) -> String {
+fn _format_message_rsj(
+    parsable_output: bool, 
+    job: &String, 
+    operation: &str, 
+    code: u64, 
+    source: &PathBuf, 
+    destination: &PathBuf,
+) -> String {
     if parsable_output {
         format_parsable_output(CONTEXT_JOB, job, code, operation,
             &String::from(source.to_str().unwrap_or("<unknown>")),
@@ -1253,7 +1286,14 @@ fn _format_message_rsj(parsable_output: bool, job: &String, operation: &str, cod
     }
 }
 
-fn _format_jobinfo_rsj(parsable_output: bool, job: &String, operation: &str, code: u64, num_copy: usize, num_delete: usize) -> String {
+fn _format_jobinfo_rsj(
+    parsable_output: bool, 
+    job: &String, 
+    operation: &str, 
+    code: u64, 
+    num_copy: usize, 
+    num_delete: usize,
+) -> String {
     if parsable_output {
         format_parsable_output(CONTEXT_JOB, job, code, operation,
             &String::from(format!("{num_copy}")),
@@ -1262,11 +1302,17 @@ fn _format_jobinfo_rsj(parsable_output: bool, job: &String, operation: &str, cod
     } else {
         match operation {
             OPERATION_JOB_BEGIN => {
-                format!("operations in job {job}: {num_copy} file(s) to copy, {num_delete} to possibly remove on destination")
+                format!("\
+                    operations in job {job}: {num_copy} file(s) to copy, \
+                    {num_delete} to possibly remove on destination"
+                )
             }
             OPERATION_JOB_END => {
                 if code == 0 {
-                    format!("results for job {job}: {num_copy} file(s) copied, {num_delete} removed on destination")
+                    format!("\
+                        results for job {job}: {num_copy} file(s) copied, \
+                        {num_delete} removed on destination"
+                    )
                 } else {
                     format!("error in job {job}: '{}'", format_err_verbose(code))
                 }
@@ -1524,7 +1570,10 @@ fn _format_message_rj(parsable_output: bool, job: &String, code: u64) -> String 
 }
 
 // actual function
-fn run_jobs(global_config: &CopyJobGlobalConfig, job_configs: &Vec<CopyJobConfig>) -> std::io::Result<()> {
+fn run_jobs(
+    global_config: &CopyJobGlobalConfig, 
+    job_configs: &Vec<CopyJobConfig>,
+) -> std::io::Result<()> {
     for job in job_configs {
         if global_config.active_jobs.contains(&job.job_name) {
             match run_single_job(job, global_config.verbose, global_config.parsable_output) {
@@ -1576,7 +1625,14 @@ struct Args {
 
 
 // simple formatter to write a message from the main entry point
-fn _format_message_main(parsable_output: bool, operation: &str, name: &String, e: Option<std::io::Error>, msg_parsable: &String, msg_verbose: &String) -> String {
+fn _format_message_main(
+    parsable_output: bool, 
+    operation: &str, 
+    name: &String, 
+    e: Option<std::io::Error>, 
+    msg_parsable: &String, 
+    msg_verbose: &String,
+) -> String {
     match e {
         Some(err) => {
             if parsable_output {
@@ -1663,7 +1719,7 @@ fn main() -> std::io::Result<()> {
                             &String::new(),
                             Some(e),
                             &format_err_parsable(ERR_GENERIC),
-                            &format_err_verbose(ERR_GENERIC)
+                            &format_err_verbose(ERR_GENERIC),
                         ));
                     }
                     std::process::exit(2);
@@ -1678,7 +1734,7 @@ fn main() -> std::io::Result<()> {
                     &String::new(),
                     Some(e),
                     &format_err_parsable(ERR_INVALID_CONFIG_FILE),
-                    &format_err_verbose(ERR_INVALID_CONFIG_FILE)
+                    &format_err_verbose(ERR_INVALID_CONFIG_FILE),
                 ));
             }
             std::process::exit(2);
