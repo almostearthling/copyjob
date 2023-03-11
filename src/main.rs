@@ -292,15 +292,14 @@ fn format_parsable_output(
 ) -> String {
     let mname: String;
     let mtype: String;
-    let mresult: String;
     let marg1: String;
     let marg2: String;
+
+    let mresult = format_err_parsable(code);
     if code == 0 {
         mtype = String::from("INFO");
-        mresult = String::from("OK");
     } else {
         mtype = String::from("ERROR");
-        mresult = format_err_parsable(code);
     }
 
     if name.is_empty() {
@@ -348,9 +347,9 @@ fn _ec_error_invalid_config(key: &str) -> std::io::Error {
 }
 
 fn _ec_replace_variables_in_string(
-    pattern: &Regex, 
-    format: &String, 
-    source: &String, 
+    pattern: &Regex,
+    format: &String,
+    source: &String,
     vars: &HashMap<String, String>,
 ) -> String {
     let mut result = String::from(source);
@@ -377,8 +376,8 @@ fn _ec_replace_variables_in_string(
 }
 
 fn _ec_replace_markers_in_string(
-    source: &String, 
-    user_home: &PathBuf, 
+    source: &String,
+    user_home: &PathBuf,
     config_file_dir: &PathBuf,
 ) -> String {
     let mut result = String::from(source);
@@ -440,8 +439,8 @@ fn _ec_add_trailing_slashes(path: &String) -> String {
 
 // actual function
 fn extract_config(
-    config_file: &PathBuf, 
-    verbose: bool, 
+    config_file: &PathBuf,
+    verbose: bool,
     parsable_output: bool,
 ) -> std::io::Result<(CopyJobGlobalConfig, Vec<CopyJobConfig>)> {
     // here we also set default values
@@ -497,7 +496,7 @@ fn extract_config(
         }
         _ => {
             return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData, 
+                std::io::ErrorKind::InvalidData,
                 format_err_parsable(ERR_INVALID_CONFIG_FILE)
             ));
         }
@@ -983,7 +982,7 @@ fn list_files_matching(
             .case_insensitive(!case_sensitive)
             .build()
             .unwrap_or(RE_MATCH_NO_FILE.clone());
-    
+
     // excluded directory is not matched as ^$, to also ignore subdirectories
     // of the excluded directory (this solution is working for now)
     // TODO: check that no other directories containing the excluded name are
@@ -1010,8 +1009,8 @@ fn list_files_matching(
                         .replace(&search_dir.to_str().unwrap(), "")
                 } else {
                     // a value of '*' as directory reports an error ('reserved' on both Unix&Win)
-                    String::from("*") 
-                };   
+                    String::from("*")
+                };
                 if dir_name != "*" && !excludedir_match.is_match(&dir_name.as_str()) {
                     if let Some(file_name) = entry.path().file_name() {
                         if include_match.is_match(&file_name.to_str().unwrap_or(""))
@@ -1136,7 +1135,7 @@ fn copyfile (
                     // in case of error check whether or not the destination
                     // directory exists, and if not create it when instructed
                     // to do so
-                    // TODO: double check this part!!! If destdir is found a 
+                    // TODO: double check this part!!! If destdir is found a
                     //       CANNOT_CREATE_DIR error is propagated
                     let mut destination_dir = PathBuf::from(&destination_path);
                     if !destination_dir.pop() {
@@ -1248,11 +1247,11 @@ fn removefile (
 ///
 
 fn _format_message_rsj(
-    parsable_output: bool, 
-    job: &String, 
-    operation: &str, 
-    code: u64, 
-    source: &PathBuf, 
+    parsable_output: bool,
+    job: &String,
+    operation: &str,
+    code: u64,
+    source: &PathBuf,
     destination: &PathBuf,
 ) -> String {
     if parsable_output {
@@ -1287,11 +1286,11 @@ fn _format_message_rsj(
 }
 
 fn _format_jobinfo_rsj(
-    parsable_output: bool, 
-    job: &String, 
-    operation: &str, 
-    code: u64, 
-    num_copy: usize, 
+    parsable_output: bool,
+    job: &String,
+    operation: &str,
+    code: u64,
+    num_copy: usize,
     num_delete: usize,
 ) -> String {
     if parsable_output {
@@ -1571,7 +1570,7 @@ fn _format_message_rj(parsable_output: bool, job: &String, code: u64) -> String 
 
 // actual function
 fn run_jobs(
-    global_config: &CopyJobGlobalConfig, 
+    global_config: &CopyJobGlobalConfig,
     job_configs: &Vec<CopyJobConfig>,
 ) -> std::io::Result<()> {
     for job in job_configs {
@@ -1626,11 +1625,11 @@ struct Args {
 
 // simple formatter to write a message from the main entry point
 fn _format_message_main(
-    parsable_output: bool, 
-    operation: &str, 
-    name: &String, 
-    e: Option<std::io::Error>, 
-    msg_parsable: &String, 
+    parsable_output: bool,
+    operation: &str,
+    name: &String,
+    e: Option<std::io::Error>,
+    msg_parsable: &String,
     msg_verbose: &String,
 ) -> String {
     match e {
