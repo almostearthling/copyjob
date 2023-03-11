@@ -1388,7 +1388,7 @@ fn run_single_job(
                         parsable_output,
                         &job.job_name,
                         OPERATION_JOB_BEGIN,
-                        0,
+                        ERR_OK,
                         files_to_copy.len(),
                         files_to_delete.len(),
                     ));
@@ -1433,7 +1433,7 @@ fn run_single_job(
                                                 parsable_output,
                                                 &job.job_name,
                                                 OPERATION_JOB_COPY,
-                                                0,
+                                                ERR_OK,
                                                 &item,
                                                 &destfile_absolute,
                                             ));
@@ -1480,7 +1480,7 @@ fn run_single_job(
                                     parsable_output,
                                     &job.job_name,
                                     OPERATION_JOB_DEL,
-                                    0,
+                                    ERR_OK,
                                     &PathBuf::new(),
                                     &item,
                                 ));
@@ -1509,7 +1509,7 @@ fn run_single_job(
                         parsable_output,
                         &job.job_name,
                         OPERATION_JOB_END,
-                        0,
+                        ERR_OK,
                         num_files_copied,
                         num_files_deleted,
                     ));
