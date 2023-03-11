@@ -1,0 +1,25 @@
+[package]
+name = "copyjob"
+version = "0.1.10"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+time = "0.3.17"
+regex = "1.7.1"
+fs_extra = "1.2.0"
+dirs = "4.0.0"
+sha2 = "0.10.2"
+data-encoding = "2.3.2"
+lazy_static = "1.4.0"
+walkdir = "2.3.2"
+toml = "0.7.2"
+serde = "1.0"
+cfgmap = { version = "0.4.0", features = ["from_toml"] }
+clap = { version = "4.1.4", features = ["derive"] }
+
+[profile.release]
+strip = true        # strip executable
+opt-level = "z"     # optimize for size
+lto = true

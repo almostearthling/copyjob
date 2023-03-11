@@ -1,0 +1,116 @@
+# copyjob.toml
+# Copy jobs 
+
+# active jobs must be specified here: if this list is omitted or set
+# to the empty list, no job will be performed
+active_jobs = [
+    "Job1",
+    "Job2",
+    "JobN",
+]
+
+# defaults for flags (the following correspond to actual defaults):
+#
+# recursive = true ................ walk subdirectories
+# overwrite = true ................ overwrite existing files
+# skip_newer = true ............... skip if destination is more recent
+# check_content = false ........... check contents of files using MD5 hash
+# follow_symlinks = true .......... follow symbolic links
+# case_sensitive = true ........... treat patterns/filenames as case sensitive
+# create_directories = true ....... create directory structure if missing
+# keep_structure = true ........... keep subdirectory structure, otherwise flat
+# halt_on_errors = false .......... halt operations upon first error (global/per job)
+# remove_others_matching = false .. remove matching files at destination if not in source
+#
+# all these parameters can be overridden in each job; any omitted parameter
+# assumes its default value (listed above)
+
+recursive = true
+overwrite = true
+skip_newer = true
+check_content = false
+follow_symlinks = true
+case_sensitive = true
+create_directories = true
+keep_structure = true
+halt_on_errors = false
+remove_others_matching = false
+
+
+# after the global parameters we can add a variables section, to define
+# shortcuts that can be replaced in source and destination directories
+# (but not in patterns of any kind). If the variable VARNAME is defined,
+# every occurrence of %{VARNAME} in both the source and destination
+# directories in each jobs will be replaced by the value associated with
+# VARNAME.
+[variables]
+DEST_BASE = '${HOME}/Documents/CopyJob'
+
+
+# specific jobs: presented as an array of [[job]] elements
+# flags specified here override the defaults set above; the following
+# parameters are mandatory for each job
+#
+# * name: job name
+# * source: source directory
+# * destination: destination directory
+#
+# while the following are not mandatory, but the inclusion pattern is
+# actually required (otherwise no file is copied):
+#
+# * patterns_include: list of regexes identifying included file names
+# * patterns_exclude: list of regexes identifying excluded file names
+# * patterns_exclude_dir: list of regexes identifying excluded directories
+#
+# the last parameter checks each segment in the path, including the common
+# prefix; the following sostitution are made in directory names:
+#
+# - ~/ at the beginning is replaced by user home directory
+# - @/ at the beginning is replaced by dirname of the .toml file
+#
+# and on Windows both / and \ can be indifferently used as dir separators;
+# meanwhile, variable substitution is also performed:
+#
+# * %{varname} is replaced by a variable defined above in this file
+# * ${varname} is replaced by an environment variable
+#
+# note that a non-existing variable will be replaced by the empty string, in
+# a way similar to other environments such as shell scripts
+
+[[job]]
+name = "Job1"
+source = "@/Job1"
+destination = "%{DEST_BASE}/Job1"
+patterns_include = [
+    '.*\.pdf',
+    ]
+halt_on_errors = true
+
+[[job]]
+name = "Job2"
+source = "@/Job2"
+destination = "%{DEST_BASE}/Job2"
+patterns_include = [
+    '.*\.docx?',
+    '.*\.xlsx?',
+    '.*\.pdf',
+    '.*\.od[a-z]',
+    ]
+
+[[job]]
+name = "JobN"
+source = "@/JobN"
+destination = "%{DEST_BASE}/JobN"
+patterns_include = [
+    '.*\.docx?',
+    '.*\.xlsx?',
+    '.*\.pdf',
+    '.*\.od[a-z]',
+    ]
+patterns_exclude = [
+    'Excluded_.*.*',
+    ]
+keep_structure = false
+
+
+# end.
