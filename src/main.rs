@@ -125,6 +125,21 @@ const ERR_INVALID_CONFIG_FILE: u64 = 9998;
 
 
 
+// context identifiers for output
+const CONTEXT_MAIN: &str = "MAIN";
+const CONTEXT_JOB: &str = "JOB";
+const CONTEXT_TASK: &str = "TASK";
+
+// operation identifiers for output
+const OPERATION_JOB_COPY: &str = "COPY";
+const OPERATION_JOB_DEL: &str = "DEL";
+const OPERATION_JOB_BEGIN: &str = "BEGIN_JOB";
+const OPERATION_JOB_END: &str = "END_JOB";
+// const OPERATION_MAIN_BEGIN: &str = "BEGIN_MAIN";
+const OPERATION_MAIN_END: &str = "END_MAIN";
+const OPERATION_CONFIG: &str = "CONFIG";
+
+
 // Some constants used within the code
 lazy_static! {
     // directory markers: any of the values in respective lists, when
@@ -271,7 +286,8 @@ fn format_parsable_output(
     context: &'static str,
     name: &String,
     code: u64,
-    operation: &'static str,
+    operation: &str,
+    // operation: &'static str,
     arg1: &String,
     arg2: &String,
 ) -> String {
@@ -328,7 +344,8 @@ fn format_parsable_output(
 
 fn _ec_error_invalid_config(key: &str) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::InvalidInput,
-        String::from(format!("{}:{}", format_err_parsable(ERR_INVALID_CONFIG_FILE), key)).as_str())
+        String::from(format!("{}:{}", format_err_parsable(ERR_INVALID_CONFIG_FILE), key))
+        .as_str())
 }
 
 fn _ec_replace_variables_in_string(pattern: &Regex, format: &String, source: &String, vars: &HashMap<String, String>) -> String {
@@ -906,7 +923,7 @@ fn extract_config(config_file: &PathBuf, verbose: bool, parsable_output: bool) -
         }
     }
 
-    // PHEW! Now the configuration is complete (unless this function panicked)
+    // now the configuration is complete (unless this function panicked)
     Ok((global_config, job_configs))
 }
 
@@ -1020,7 +1037,6 @@ fn copyfile (
         // NOTE: https://doc.rust-lang.org/nightly/std/fs/fn.canonicalize.html#errors
         //       `canonicalize` returns an error if the target does not exist, thus
         //       we either get the canonicalied path or the original path.
-        // TODO: consider assuming paths as already canonicalized by the caller
 
     // check source and destination metadata (and whether or not they exist)
     match metadata(&source_path) {
@@ -1205,81 +1221,60 @@ fn removefile (
 /// suitable messages when needed.
 ///
 
-fn _rsj_format_copy_feedback(parsable_output: bool, job: &String, source: &PathBuf, destination: &PathBuf) -> String {
+fn _format_message_rsj(parsable_output: bool, job: &String, operation: &str, code: u64, source: &PathBuf, destination: &PathBuf) -> String {
     if parsable_output {
-        format_parsable_output("JOB", job, 0, "COPY",
+        format_parsable_output(CONTEXT_JOB, job, code, operation,
             &String::from(source.to_str().unwrap_or("<unknown>")),
             &String::from(destination.to_str().unwrap_or("<unknown>")))
     } else {
-        format!("copied in job {}: {} => {}", job, source.display(), destination.display())
+        match operation {
+            OPERATION_JOB_COPY => {
+                if code == 0 {
+                    format!("copied in job {job}: {} => {}",
+                        source.display(), destination.display())
+                } else {
+                    format!("error in job {job}: '{}' while copying {} => {}",
+                        format_err_verbose(code), source.display(),
+                        destination.display())
+                }
+            }
+            OPERATION_JOB_DEL => {
+                if code == 0 {
+                    format!("removed in job {job}: {}", destination.display())
+                } else {
+                    format!("error in job {job}: '{}' while removing {}",
+                        format_err_verbose(code), destination.display())
+                }
+            }
+            op => {
+                format!("unexpected operation: {op}")
+            }
+        }
     }
 }
 
-fn _rsj_format_copy_error(parsable_output: bool, job: &String, code: u64, source: &PathBuf, destination: &PathBuf) -> String {
+fn _format_jobinfo_rsj(parsable_output: bool, job: &String, operation: &str, code: u64, num_copy: usize, num_delete: usize) -> String {
     if parsable_output {
-        format_parsable_output("JOB", job, code, "COPY",
-            &String::from(source.to_str().unwrap_or("<unknown>")),
-            &String::from(destination.to_str().unwrap_or("<unknown>")))
-    } else {
-        format!("error in job {}: '{}' while copying {} => {}",
-            job, format_err_verbose(code), source.display(), destination.display())
-    }
-}
-
-fn _rsj_format_del_feedback(parsable_output: bool, job: &String, destination: &PathBuf) -> String {
-    if parsable_output {
-        format_parsable_output("JOB", job, 0, "DEL",
-            &String::new(),
-            &String::from(destination.to_str().unwrap_or("<unknown>")),
+        format_parsable_output(CONTEXT_JOB, job, code, operation,
+            &String::from(format!("{num_copy}")),
+            &String::from(format!("{num_delete}")),
         )
     } else {
-        format!("removed in job {}: {}", job, destination.display())
-    }
-}
-
-fn _rsj_format_del_error(parsable_output: bool, job: &String, code: u64, destination: &PathBuf) -> String {
-    if parsable_output {
-        format_parsable_output("JOB", job, code, "DEL",
-            &String::new(),
-            &String::from(destination.to_str().unwrap_or("<unknown>")),
-        )
-    } else {
-        format!("error in job {}: '{}' while removing {}",
-            job, format_err_verbose(code), destination.display())
-    }
-}
-
-fn _rsj_format_job_info_begin(parsable_output: bool, job: &String, to_copy: usize, to_delete: usize) -> String {
-    if parsable_output {
-        format_parsable_output("JOB", job, 0, "BEG_CPDL",
-            &String::from(format!("{to_copy}")),
-            &String::from(format!("{to_delete}")),
-        )
-    } else {
-        format!("tasks in job {}: {} file(s) to copy, {} to possibly remove on destination",
-            job, to_copy, to_delete)
-    }
-}
-
-fn _rsj_format_job_info_end(parsable_output: bool, job: &String, copied: usize, deleted: usize) -> String {
-    if parsable_output {
-        format_parsable_output("JOB", job, 0, "END_CPDL",
-            &String::from(format!("{copied}")),
-            &String::from(format!("{deleted}")),
-        )
-    } else {
-        format!("results for job {}: {} file(s) copied, {} removed on destination", job, copied, deleted)
-    }
-}
-
-fn _rsj_format_job_error(parsable_output: bool, job: &String, code: u64) -> String {
-    if parsable_output {
-        format_parsable_output("JOB", job, code, "END_CPDL",
-            &String::new(),
-            &String::new(),
-        )
-    } else {
-        format!("error in job {}: '{}'", job, format_err_verbose(code))
+        match operation {
+            OPERATION_JOB_BEGIN => {
+                format!("operations in job {job}: {num_copy} file(s) to copy, {num_delete} to possibly remove on destination")
+            }
+            OPERATION_JOB_END => {
+                if code == 0 {
+                    format!("results for job {job}: {num_copy} file(s) copied, {num_delete} removed on destination")
+                } else {
+                    format!("error in job {job}: '{}'", format_err_verbose(code))
+                }
+            }
+            op => {
+                format!("unexpected operation: {op}")
+            }
+        }
     }
 }
 
@@ -1294,16 +1289,28 @@ fn run_single_job(
         &job.source_dir.canonicalize().unwrap_or(PathBuf::new()));
     if !source_directory.exists() {
         if verbose {
-            eprintln!("{}", _rsj_format_job_error(
-                parsable_output, &job.job_name, CJERR_DESTINATION_DIR_NOT_EXISTS));
+            eprintln!("{}", _format_jobinfo_rsj(
+                parsable_output,
+                &job.job_name,
+                OPERATION_JOB_BEGIN,
+                CJERR_DESTINATION_DIR_NOT_EXISTS,
+                0,
+                0,
+            ));
         }
         return CopyJobOutcome::Error(CJERR_SOURCE_DIR_NOT_EXISTS);
     }
     if !job.destination_dir.exists() {
         if !job.create_directories {
             if verbose {
-                eprintln!("{}", _rsj_format_job_error(
-                    parsable_output, &job.job_name, CJERR_DESTINATION_DIR_NOT_EXISTS));
+                eprintln!("{}", _format_jobinfo_rsj(
+                    parsable_output,
+                    &job.job_name,
+                    OPERATION_JOB_BEGIN,
+                    CJERR_DESTINATION_DIR_NOT_EXISTS,
+                    0,
+                    0,
+                ));
             }
             return CopyJobOutcome::Error(CJERR_DESTINATION_DIR_NOT_EXISTS);
         }
@@ -1311,8 +1318,6 @@ fn run_single_job(
 
     // build the list of files to be copied
     match list_files_matching(
-        // use job.source_dir here to retrieve names that are not canonicalized
-        // and thus usable for string operations as described in the config
         &job.source_dir,
         &job.include_pattern,
         &job.exclude_pattern,
@@ -1334,9 +1339,11 @@ fn run_single_job(
                         job.case_sensitive).unwrap_or(Vec::new())
                 } else { Vec::new() };
                 if verbose {
-                    println!("{}", _rsj_format_job_info_begin(
+                    println!("{}", _format_jobinfo_rsj(
                         parsable_output,
                         &job.job_name,
+                        OPERATION_JOB_BEGIN,
+                        0,
                         files_to_copy.len(),
                         files_to_delete.len(),
                     ));
@@ -1377,9 +1384,11 @@ fn run_single_job(
                                     FileOpOutcome::Success => {
                                         num_files_copied += 1;
                                         if verbose {
-                                            println!("{}", _rsj_format_copy_feedback(
+                                            println!("{}", _format_message_rsj(
                                                 parsable_output,
                                                 &job.job_name,
+                                                OPERATION_JOB_COPY,
+                                                0,
                                                 &item,
                                                 &destfile_absolute,
                                             ));
@@ -1387,9 +1396,10 @@ fn run_single_job(
                                     }
                                     FileOpOutcome::Error(err) => {
                                         if verbose {
-                                            eprintln!("{}", _rsj_format_copy_error(
+                                            eprintln!("{}", _format_message_rsj(
                                                 parsable_output,
                                                 &job.job_name,
+                                                OPERATION_JOB_COPY,
                                                 err,
                                                 &item,
                                                 &destfile_absolute,
@@ -1402,9 +1412,10 @@ fn run_single_job(
                                 };
                         } else {
                             if verbose {
-                                eprintln!("{}", _rsj_format_copy_error(
+                                eprintln!("{}", _format_message_rsj(
                                     parsable_output,
                                     &job.job_name,
+                                    OPERATION_JOB_COPY,
                                     CJERR_CANNOT_DETERMINE_DESTFILE,
                                     &item,
                                     &destination,
@@ -1420,15 +1431,27 @@ fn run_single_job(
                     match removefile(&item, job.follow_symlinks) {
                         FileOpOutcome::Success => {
                             if verbose {
-                                println!("{}", _rsj_format_del_feedback(
-                                    parsable_output, &job.job_name, &item));
+                                println!("{}", _format_message_rsj(
+                                    parsable_output,
+                                    &job.job_name,
+                                    OPERATION_JOB_DEL,
+                                    0,
+                                    &PathBuf::new(),
+                                    &item,
+                                ));
                             }
                             num_files_deleted += 1;
                         }
                         FileOpOutcome::Error(err) => {
                             if verbose {
-                                eprintln!("{}", _rsj_format_del_error(
-                                    parsable_output, &job.job_name, err, &item));
+                                eprintln!("{}", _format_message_rsj(
+                                    parsable_output,
+                                    &job.job_name,
+                                    OPERATION_JOB_DEL,
+                                    err,
+                                    &PathBuf::new(),
+                                    &item,
+                                ));
                             }
                             if job.halt_on_errors {
                                 return CopyJobOutcome::Error(CJERR_GENERIC_FAILURE);
@@ -1437,9 +1460,11 @@ fn run_single_job(
                     }
                 }
                 if verbose {
-                    println!("{}", _rsj_format_job_info_end(
+                    println!("{}", _format_jobinfo_rsj(
                         parsable_output,
                         &job.job_name,
+                        OPERATION_JOB_END,
+                        0,
                         num_files_copied,
                         num_files_deleted,
                     ));
@@ -1447,8 +1472,14 @@ fn run_single_job(
             }
             None => {
                 if verbose {
-                    eprintln!("{}", _rsj_format_job_error(
-                        parsable_output, &job.job_name, CJERR_NO_SOURCE_FILES));
+                    eprintln!("{}", _format_jobinfo_rsj(
+                        parsable_output,
+                        &job.job_name,
+                        OPERATION_JOB_END,
+                        CJERR_NO_SOURCE_FILES,
+                        0,
+                        0,
+                    ));
                 }
                 return CopyJobOutcome::Error(CJERR_NO_SOURCE_FILES);
             }
@@ -1473,67 +1504,45 @@ fn run_single_job(
 /// NOTE: writes to stdout/stderr
 /// NOTE: machine readable prefix of this section is TASK
 ///
-/// The following lines also include some simple formatters to ease up writing
+/// The following lines also include a simple formatter to ease up writing
 /// suitable messages when needed.
 ///
 
-fn _rj_format_copy_feedback(parsable_output: bool, job: &String) -> String {
+fn _format_message_rj(parsable_output: bool, job: &String, code: u64) -> String {
     if parsable_output {
         format_parsable_output(
-            "TASK", job, 0, "END_JOB",
+            CONTEXT_TASK, job, code, OPERATION_JOB_END,
             &String::new(),
             &String::new())
     } else {
-        format!("job {} completed successfully", job)
-    }
-}
-
-fn _rj_format_copy_error(parsable_output: bool, job: &String, code: u64) -> String {
-    if parsable_output {
-        format_parsable_output(
-            "TASK", job, code, "END_JOB",
-            &String::new(),
-            &String::new())
-    } else {
-        format!("job {} failed with error '{}'", job, format_err_verbose(code))
-    }
-}
-
-fn _rj_format_cfgfile_info(parsable_output: bool, cfgfile: &String) -> String {
-    if parsable_output {
-        format_parsable_output(
-            "TASK", cfgfile, 0, "CONFIG",
-            &String::new(),
-            &String::new())
-    } else {
-        format!("info: using configuration file '{}'", cfgfile)
+        if code == 0 {
+            format!("job {} completed successfully", job)
+        } else {
+            format!("job {} failed with error '{}'", job, format_err_verbose(code))
+        }
     }
 }
 
 // actual function
 fn run_jobs(global_config: &CopyJobGlobalConfig, job_configs: &Vec<CopyJobConfig>) -> std::io::Result<()> {
-    if global_config.verbose {
-        println!("{}", _rj_format_cfgfile_info(
-            global_config.parsable_output,
-            &global_config.config_file.to_string_lossy().to_string()));
-    }
     for job in job_configs {
         if global_config.active_jobs.contains(&job.job_name) {
             match run_single_job(job, global_config.verbose, global_config.parsable_output) {
                 CopyJobOutcome::Success => {
                     if global_config.verbose {
-                        println!("{}", _rj_format_copy_feedback(
-                            global_config.parsable_output, &job.job_name));
+                        println!("{}", _format_message_rj(
+                            global_config.parsable_output, &job.job_name, 0));
                     }
                 }
                 CopyJobOutcome::Error(code) => {
                     if global_config.verbose {
-                        println!("{}", _rj_format_copy_error(
+                        println!("{}", _format_message_rj(
                             global_config.parsable_output, &job.job_name, code));
                     }
                     if global_config.halt_on_errors {
                         return Err(std::io::Error::new(
-                            std::io::ErrorKind::Interrupted, format_err_parsable(ERR_GENERIC)));
+                            std::io::ErrorKind::Interrupted,
+                            format_err_parsable(ERR_GENERIC)));
                     }
                 }
             }
@@ -1566,28 +1575,37 @@ struct Args {
 }
 
 
-// helpers to write a message from the main entry point
-fn _main_format_error(parsable_output: bool, e: std::io::Error, msg_parsable: &String, msg_verbose: &String) -> String {
-    if parsable_output {
-        let code = u64::try_from(
-            e.raw_os_error().unwrap_or(9999)).unwrap_or(9999);
-        format_parsable_output(
-            "MAIN", &String::new(), code, "END_MAIN",
-            msg_parsable,
-            &String::from(e.to_string()))
-    } else {
-        format!("error: {} / {}", msg_verbose, e.to_string())
-    }
-}
-
-fn _main_format_output(parsable_output: bool, msg_parsable: &String, msg_verbose: &String) -> String {
-    if parsable_output {
-        format_parsable_output(
-            "MAIN", &String::new(), ERR_OK, "END_MAIN",
-            msg_parsable,
-            &String::new())
-    } else {
-        format!("info: {} ", msg_verbose)
+// simple formatter to write a message from the main entry point
+fn _format_message_main(parsable_output: bool, operation: &str, name: &String, e: Option<std::io::Error>, msg_parsable: &String, msg_verbose: &String) -> String {
+    match e {
+        Some(err) => {
+            if parsable_output {
+                let code = u64::try_from(
+                    err.raw_os_error().unwrap_or(9999)).unwrap_or(9999);
+                format_parsable_output(
+                    CONTEXT_MAIN,
+                    name,
+                    code,
+                    operation,
+                    msg_parsable,
+                    &String::from(err.to_string()))
+            } else {
+                format!("error: {} / {}", msg_verbose, err.to_string())
+            }
+        }
+        _ => {
+            if parsable_output {
+                format_parsable_output(
+                    CONTEXT_MAIN,
+                    name,
+                    ERR_OK,
+                    operation,
+                    msg_parsable,
+                    &String::new())
+            } else {
+                format!("info: {} ", msg_verbose)
+            }
+        }
     }
 }
 
@@ -1602,41 +1620,66 @@ fn main() -> std::io::Result<()> {
     // PathBuf is produced if the file path does not exist, and this will
     // cause an error while reading the configuration
     let config = extract_config(
-        &PathBuf::from(args.config).canonicalize().unwrap_or(PathBuf::new()),
+        &PathBuf::from(args.config)
+            .canonicalize()
+            .unwrap_or(PathBuf::new()),
         !args.quiet,
         args.parsable_output);
 
     match config {
         Ok((global, jobs)) => {
+            if !args.quiet {
+                println!("{}", _format_message_main(
+                    args.parsable_output,
+                    OPERATION_CONFIG,
+                    &String::from(
+                        global.config_file.as_os_str().to_str().unwrap_or(&String::new())),
+                    None,
+                    &String::new(),
+                    &format!("info: using configuration file {}",
+                        global.config_file.as_os_str().to_str().unwrap_or(&String::new())),
+                ));
+            }
+
             match run_jobs(&global, &jobs) {
                 Ok(_) => {
                     if !args.quiet {
-                        println!("{}", _main_format_output(
+                        println!("{}", _format_message_main(
                             args.parsable_output,
+                            OPERATION_MAIN_END,
+                            &String::new(),
+                            None,
                             &format_err_parsable(ERR_OK),
-                            &format_err_verbose(ERR_OK)));
-                        }
+                            &format_err_verbose(ERR_OK),
+                        ));
+                    }
                     Ok(())
                 }
                 Err(e) => {
                     if !args.quiet {
-                        eprintln!("{}", _main_format_error(
+                        eprintln!("{}", _format_message_main(
                             args.parsable_output,
-                            e,
+                            OPERATION_MAIN_END,
+                            &String::new(),
+                            Some(e),
                             &format_err_parsable(ERR_GENERIC),
-                            &format_err_verbose(ERR_GENERIC)));
-                        }
+                            &format_err_verbose(ERR_GENERIC)
+                        ));
+                    }
                     std::process::exit(2);
                 }
             }
         }
         Err(e) => {
             if !args.quiet {
-                eprintln!("{}", _main_format_error(
+                eprintln!("{}", _format_message_main(
                     args.parsable_output,
-                    e,
+                    OPERATION_MAIN_END,
+                    &String::new(),
+                    Some(e),
                     &format_err_parsable(ERR_INVALID_CONFIG_FILE),
-                    &format_err_verbose(ERR_INVALID_CONFIG_FILE)));
+                    &format_err_verbose(ERR_INVALID_CONFIG_FILE)
+                ));
             }
             std::process::exit(2);
         }
