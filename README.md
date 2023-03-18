@@ -11,7 +11,7 @@ Jobs are related to a source directory and a destination: it is possible to
 create the destination path if it doesn't exist, and to recreate totally or
 partially the source structure at the destination. Jobs can be instructed to
 selectively copy files, according to criteria specified in the configuration:
-such criteria include file name patternss for both inclusion and exclusion,
+such criteria include file name patterns for both inclusion and exclusion,
 checking file age and/or contents compared to a possibly existing destination
 file, and subdirectories to skip. A job can also remove files existing in the
 destination directory if they match the naming criteria given for the source
@@ -127,14 +127,17 @@ recursive = false
 This very simple configuration file defines two different jobs that **copyjob**
 will be able to perform:
 
-1. **Reports**: will copy Word:tm:, Excel:tm: and PDF files whose names begin
-   with the word *Report* followed by an underscore and any other characters:
-   the job will copy both old and new Word and Excel files (the *RE* states
-   that the *x* at the end is optional),
-2. **CurrentSummary**: will copy all the PowerPoint:tm: presentations, created
-   with either older or recent editions of PowerPoint, whose file name is
-   *Current Summary* followed by a space and a version number with no dots
-   in it.
+1. **Reports**: will copy Word&trade;, Excel&trade; and PDF files whose names
+   begin with the word *Report* followed by an underscore and any other
+   characters: the job will copy both old and new Word and Excel files (the
+   *RE* states that the *x* at the end is optional); this job walks through
+   subdirectories, but any matching files found in the subdirectories will be
+   copied in the destination folder without recreating the source directory
+   structure,
+2. **CurrentSummary**: will copy all the PowerPoint&trade; presentations,
+   created with either older or recent editions of PowerPoint, whose file name
+   is *Current Summary* followed by a space and a version number with no dots
+   in it; this job will ignore all subdirectories of the source folder.
 
 At the global level we instruct **copyjob** to treat file names as case
 insensitive, to make sure we don't miss files that could have be named
@@ -229,6 +232,13 @@ for any reason. The rationale behind this choice is, that an user that turns
 that particular parameter on would probably want to clean up the folders at the
 destination from unnecessary files, even when there are versions of the source
 documents (for example newer) that cause the copy operation to fail.
+
+Also, note that if a flat destination is chosen (`keep_structure = false`) and
+the job is set to walk subdirectories (`recursive = true`), the result might
+be unexpected when a file with the same name is found in the main directory
+and/or in subdirectories: which file will be copied depends on the order in
+which the OS traverses subdirectories, and which one of the homonymous source
+files is older in case only newer files are set to be replicated.
 
 
 ## Configuration of jobs
@@ -352,7 +362,7 @@ according to some logical pattern, but this is not always possible, mostly
 because these files tend to propagate via other means than common
 repositories - and, in such cases, different names might be interpreted as
 different documents or at least as different versions of the same document.
-Thus I decided that the best tactic was to use and distribute documents
+Thus I decided that the best strategy was to use and distribute documents
 preserving their original names.
 
 I keep these files in a directory structure that can optimistically be
@@ -408,12 +418,12 @@ modified.
 Also, this is a *quick-and-dirty* utility (at least for now): it focuses on
 getting the job(s) done considering that files are replicated from one folder
 to another *on a personal computer*: no checks are performed on concurrency
-issue, and possible errors during copy only depend on OS issues such as user
+issues, and possible errors during copy only depend on OS issues such as user
 rights on destination directories and files.
 
-I actually use **copyjob** on a daily basis, and it sometimes refused to
-overwwrite or delete files in the destination folder - in its really early
-editions - but it never lost a file unintentionally.
+I actually use **copyjob** on a daily basis, and it sometimes unintentionally
+refused to overwwrite or delete files in the destination folder - in its really
+early editions - but it never erroneously lost a file.
 
 
 ## License

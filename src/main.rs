@@ -79,12 +79,12 @@ struct CopyJobGlobalConfig {
 // to the plethora of *::Result outcomes used in Rust (though it indicates
 // either Success or a specified error)
 #[derive(Debug)]
-enum FileOpOutcome {
+enum Outcome {
     Success,
     Error(u64),     // will report a code from the following list
 }
 
-// Values for FileOpOutcome::Error
+// Values for Outcome::Error (copy_file, remove_file)
 const FOERR_GENERIC_FAILURE: u64 = 1001;
 const FOERR_DESTINATION_IS_ITSELF: u64 = 1011;
 const FOERR_DESTINATION_IS_DIR: u64 = 1012;
@@ -101,15 +101,7 @@ const FOERR_SOURCE_IS_DIR: u64 = 1042;
 const FOERR_SOURCE_IS_SYMLINK: u64 = 1043;
 const FOERR_SOURCE_NOT_ACCESSIBLE: u64 = 1044;
 
-
-// Holds a result for a copy job operation
-#[derive(Debug)]
-enum CopyJobOutcome {
-    Success,
-    Error(u64),     // will report a code from the following
-}
-
-// values for CopyJobOutcome::Error
+// values for Outcome::Error (run_single_job, run_jobs)
 const CJERR_GENERIC_FAILURE: u64 = 2001;
 const CJERR_SOURCE_DIR_NOT_EXISTS: u64 = 2011;
 const CJERR_DESTINATION_DIR_NOT_EXISTS: u64 = 2012;
@@ -117,8 +109,7 @@ const CJERR_NO_SOURCE_FILES: u64 = 2013;
 const CJERR_CANNOT_DETERMINE_DESTFILE: u64 = 2021;
 const CJERR_HALT_ON_COPY_ERROR: u64 = 2041;
 
-
-// value for generic outcomes
+// values for generic outcomes
 const ERR_OK: u64 = 0;
 const ERR_GENERIC: u64 = 9999;
 const ERR_INVALID_CONFIG_FILE: u64 = 9998;
@@ -1001,7 +992,8 @@ fn list_files_matching(
         .follow_links(follow_symlinks)
         .into_iter()
         .filter_map(|e| e.ok()) {    // skip errors
-            if !entry.file_type().is_dir() && !(follow_symlinks && entry.file_type().is_symlink()) {
+            if !entry.file_type().is_dir() && !(follow_symlinks 
+               && entry.file_type().is_symlink()) {
                 let mut dir_pathbuf = PathBuf::from(entry.path());
                 let dir_name = if dir_pathbuf.pop() {
                     dir_pathbuf.to_str()
@@ -1044,7 +1036,7 @@ fn list_files_matching(
 ///     create_directories: create directory if it does not exist yet
 ///
 
-fn copyfile (
+fn copy_file (
     source: &PathBuf,
     destination: &PathBuf,
     overwrite: bool,
@@ -1052,7 +1044,7 @@ fn copyfile (
     check_content: bool,
     follow_symlinks: bool,
     create_directories: bool,
-) -> FileOpOutcome {
+) -> Outcome {
     // normalize paths
     let source_path = PathBuf::from(
         &source.canonicalize().unwrap_or(PathBuf::new()));
@@ -1067,13 +1059,13 @@ fn copyfile (
         Ok(s_stat) => {
             // first check that source <> destination
             if source_path == destination_path {
-                return FileOpOutcome::Error(FOERR_DESTINATION_IS_ITSELF);
+                return Outcome::Error(FOERR_DESTINATION_IS_ITSELF);
             }
             if s_stat.is_dir() {
-                return FileOpOutcome::Error(FOERR_SOURCE_IS_DIR);
+                return Outcome::Error(FOERR_SOURCE_IS_DIR);
             }
             if s_stat.is_symlink() && !follow_symlinks {   // TODO: expected?
-                return FileOpOutcome::Error(FOERR_SOURCE_IS_SYMLINK);
+                return Outcome::Error(FOERR_SOURCE_IS_SYMLINK);
             }
             match metadata(&destination_path) {
                 Ok(d_stat) => {
@@ -1081,11 +1073,11 @@ fn copyfile (
                     // whether overwrite is false, compare s_stat, d_stat and
                     // possibly hashes
                     if !overwrite {
-                        return FileOpOutcome::Error(FOERR_DESTINATION_EXISTS);
+                        return Outcome::Error(FOERR_DESTINATION_EXISTS);
                     } else if d_stat.is_dir() {
-                        return FileOpOutcome::Error(FOERR_DESTINATION_IS_DIR);
+                        return Outcome::Error(FOERR_DESTINATION_IS_DIR);
                     } else if d_stat.is_symlink() && !follow_symlinks {
-                        return FileOpOutcome::Error(FOERR_DESTINATION_IS_SYMLINK);
+                        return Outcome::Error(FOERR_DESTINATION_IS_SYMLINK);
                     }
                     if skip_newer {
                         match s_stat.modified() {
@@ -1093,17 +1085,19 @@ fn copyfile (
                                 match d_stat.modified() {
                                     Ok(d_mtime) => {
                                         if s_mtime <= d_mtime {
-                                            return FileOpOutcome::Error(FOERR_DESTINATION_IS_NEWER);
+                                            return Outcome::Error(
+                                                FOERR_DESTINATION_IS_NEWER);
                                         }
                                     }
                                     Err(_) => {
-                                        return FileOpOutcome::Error(FOERR_DESTINATION_NOT_ACCESSIBLE);
+                                        return Outcome::Error(
+                                            FOERR_DESTINATION_NOT_ACCESSIBLE);
                                     }
                                 }
                             }
                             // should never be reached
                             Err(_) => {
-                                return FileOpOutcome::Error(FOERR_SOURCE_NOT_ACCESSIBLE);
+                                return Outcome::Error(FOERR_SOURCE_NOT_ACCESSIBLE);
                             }
                         }
                     }
@@ -1115,18 +1109,18 @@ fn copyfile (
                                 match sha256_digest(&destination_path) {
                                     Ok(destination_hash) => {
                                         if destination_hash == source_hash {
-                                            return FileOpOutcome::Error(
+                                            return Outcome::Error(
                                                 FOERR_DESTINATION_IS_IDENTICAL);
                                         }
                                     }
                                     Err(_) => {
-                                        return FileOpOutcome::Error(
+                                        return Outcome::Error(
                                             FOERR_DESTINATION_NOT_ACCESSIBLE);
                                     }
                                 }
                             }
                             Err(_) => {
-                                return FileOpOutcome::Error(FOERR_SOURCE_NOT_ACCESSIBLE);
+                                return Outcome::Error(FOERR_SOURCE_NOT_ACCESSIBLE);
                             }
                         }
                     }
@@ -1139,22 +1133,22 @@ fn copyfile (
                     //       CANNOT_CREATE_DIR error is propagated
                     let mut destination_dir = PathBuf::from(&destination_path);
                     if !destination_dir.pop() {
-                        return FileOpOutcome::Error(FOERR_CANNOT_CREATE_DIR);
+                        return Outcome::Error(FOERR_CANNOT_CREATE_DIR);
                     }
                     match metadata(&destination_dir) {
                         Ok(d_dirdata) => {
                             if !d_dirdata.is_dir() {
-                                return FileOpOutcome::Error(FOERR_CANNOT_CREATE_DIR);
+                                return Outcome::Error(FOERR_CANNOT_CREATE_DIR);
                             }
                         }
                         Err(_) => {
                             if !create_directories {
-                                return FileOpOutcome::Error(FOERR_CANNOT_CREATE_DIR);
+                                return Outcome::Error(FOERR_CANNOT_CREATE_DIR);
                             }
                             match create_dir_all(&destination_dir) {
                                 Ok(_) => { /* safe to go */ }
                                 Err(_) => {
-                                    return FileOpOutcome::Error(FOERR_CANNOT_CREATE_DIR);
+                                    return Outcome::Error(FOERR_CANNOT_CREATE_DIR);
                                 }
                             }
                         }
@@ -1167,18 +1161,18 @@ fn copyfile (
                 Ok(_) => {
                     // FileOpOutcome::Success is returned only here, after an
                     // actually successful copy operation
-                    return FileOpOutcome::Success
+                    return Outcome::Success
                 }
                 Err(res_err) => {
                     if res_err.kind() == std::io::ErrorKind::PermissionDenied {
-                        return FileOpOutcome::Error(FOERR_DESTINATION_IS_READONLY);
+                        return Outcome::Error(FOERR_DESTINATION_IS_READONLY);
                     }
-                    return FileOpOutcome::Error(FOERR_GENERIC_FAILURE);
+                    return Outcome::Error(FOERR_GENERIC_FAILURE);
                 }
             }
         }
         Err(_) => {
-            return FileOpOutcome::Error(FOERR_SOURCE_NOT_ACCESSIBLE);
+            return Outcome::Error(FOERR_SOURCE_NOT_ACCESSIBLE);
         }
     }
 }
@@ -1192,10 +1186,10 @@ fn copyfile (
 ///     follow_symlinks: follow symbolic links
 ///
 
-fn removefile (
+fn remove_file (
     destination: &PathBuf,
     follow_symlinks: bool,
-) -> FileOpOutcome {
+) -> Outcome {
     // normalize paths
     let destination_path = PathBuf::from(
         &destination.canonicalize().unwrap_or(PathBuf::new()));
@@ -1204,21 +1198,21 @@ fn removefile (
         Ok(d_stat) => {
             // if we are here, then destination exists
             if d_stat.is_dir() {
-                return FileOpOutcome::Error(FOERR_DESTINATION_IS_DIR);
+                return Outcome::Error(FOERR_DESTINATION_IS_DIR);
             } else if d_stat.is_symlink() && !follow_symlinks {
-                return FileOpOutcome::Error(FOERR_DESTINATION_IS_SYMLINK);
+                return Outcome::Error(FOERR_DESTINATION_IS_SYMLINK);
             }
             match fs::remove_file(destination_path) {
                 Ok(_) => {
-                    return FileOpOutcome::Success;
+                    return Outcome::Success;
                 }
                 Err(_) => {
-                    return FileOpOutcome::Error(FOERR_DESTINATION_NOT_ACCESSIBLE);
+                    return Outcome::Error(FOERR_DESTINATION_NOT_ACCESSIBLE);
                 }
             }
         }
         Err(_) => {
-            return FileOpOutcome::Error(FOERR_DESTINATION_NOT_ACCESSIBLE);
+            return Outcome::Error(FOERR_DESTINATION_NOT_ACCESSIBLE);
         }
     }
 }
@@ -1328,7 +1322,7 @@ fn run_single_job(
     job: &CopyJobConfig,
     verbose: bool,
     parsable_output: bool,
-) -> CopyJobOutcome {
+) -> Outcome {
     // source and destination must exist and be canonicalizeable
     let source_directory = PathBuf::from(
         &job.source_dir.canonicalize().unwrap_or(PathBuf::new()));
@@ -1343,7 +1337,7 @@ fn run_single_job(
                 0,
             ));
         }
-        return CopyJobOutcome::Error(CJERR_SOURCE_DIR_NOT_EXISTS);
+        return Outcome::Error(CJERR_SOURCE_DIR_NOT_EXISTS);
     }
     if !job.destination_dir.exists() {
         if !job.create_directories {
@@ -1357,7 +1351,7 @@ fn run_single_job(
                     0,
                 ));
             }
-            return CopyJobOutcome::Error(CJERR_DESTINATION_DIR_NOT_EXISTS);
+            return Outcome::Error(CJERR_DESTINATION_DIR_NOT_EXISTS);
         }
     }
 
@@ -1418,7 +1412,7 @@ fn run_single_job(
                                         .position(|x| x.as_path() == destfile_absolute.as_path())
                                         .unwrap());     // cannot panic here
                             }
-                            match copyfile(
+                            match copy_file(
                                 &item,
                                 &destfile_absolute,
                                 job.overwrite,
@@ -1426,7 +1420,7 @@ fn run_single_job(
                                 job.check_content,
                                 job.follow_symlinks,
                                 job.create_directories) {
-                                    FileOpOutcome::Success => {
+                                    Outcome::Success => {
                                         num_files_copied += 1;
                                         if verbose {
                                             println!("{}", _format_message_rsj(
@@ -1439,7 +1433,7 @@ fn run_single_job(
                                             ));
                                         }
                                     }
-                                    FileOpOutcome::Error(err) => {
+                                    Outcome::Error(err) => {
                                         if verbose {
                                             eprintln!("{}", _format_message_rsj(
                                                 parsable_output,
@@ -1451,7 +1445,7 @@ fn run_single_job(
                                             ));
                                         }
                                         if job.halt_on_errors {
-                                            return CopyJobOutcome::Error(CJERR_GENERIC_FAILURE);
+                                            return Outcome::Error(CJERR_GENERIC_FAILURE);
                                         };
                                     }
                                 };
@@ -1467,14 +1461,14 @@ fn run_single_job(
                                 ));
                             }
                             if job.halt_on_errors {
-                                return CopyJobOutcome::Error(CJERR_CANNOT_DETERMINE_DESTFILE)
+                                return Outcome::Error(CJERR_CANNOT_DETERMINE_DESTFILE)
                             }
                         }
                 }
                 // if not remove_other_matching the vector is empty
                 for item in files_to_delete {
-                    match removefile(&item, job.follow_symlinks) {
-                        FileOpOutcome::Success => {
+                    match remove_file(&item, job.follow_symlinks) {
+                        Outcome::Success => {
                             if verbose {
                                 println!("{}", _format_message_rsj(
                                     parsable_output,
@@ -1487,7 +1481,7 @@ fn run_single_job(
                             }
                             num_files_deleted += 1;
                         }
-                        FileOpOutcome::Error(err) => {
+                        Outcome::Error(err) => {
                             if verbose {
                                 eprintln!("{}", _format_message_rsj(
                                     parsable_output,
@@ -1499,7 +1493,7 @@ fn run_single_job(
                                 ));
                             }
                             if job.halt_on_errors {
-                                return CopyJobOutcome::Error(CJERR_GENERIC_FAILURE);
+                                return Outcome::Error(CJERR_GENERIC_FAILURE);
                             };
                         }
                     }
@@ -1526,11 +1520,11 @@ fn run_single_job(
                         0,
                     ));
                 }
-                return CopyJobOutcome::Error(CJERR_NO_SOURCE_FILES);
+                return Outcome::Error(CJERR_NO_SOURCE_FILES);
             }
     }
 
-    CopyJobOutcome::Success
+    Outcome::Success
 }
 
 
@@ -1576,13 +1570,13 @@ fn run_jobs(
     for job in job_configs {
         if global_config.active_jobs.contains(&job.job_name) {
             match run_single_job(job, global_config.verbose, global_config.parsable_output) {
-                CopyJobOutcome::Success => {
+                Outcome::Success => {
                     if global_config.verbose {
                         println!("{}", _format_message_rj(
                             global_config.parsable_output, &job.job_name, 0));
                     }
                 }
-                CopyJobOutcome::Error(code) => {
+                Outcome::Error(code) => {
                     if global_config.verbose {
                         println!("{}", _format_message_rj(
                             global_config.parsable_output, &job.job_name, code));
