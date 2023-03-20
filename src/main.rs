@@ -22,6 +22,7 @@ use dirs::home_dir;
 use walkdir::WalkDir;
 
 use toml;
+use trash;
 use cfgmap::{CfgValue, CfgMap, Condition::*, Checkable};
 use data_encoding::HEXLOWER;
 use sha2::{Digest, Sha256};
@@ -48,6 +49,9 @@ struct CopyJobConfig {
     remove_others_matching: bool,   // remove matching files not present in source
     create_directories: bool,       // create non-existing directories
     keep_structure: bool,           // keep directory structure as in source
+    trash_on_delete: bool,          // use garbage bin instead of deleting
+    trash_on_overwrite: bool,       // send to garbage bin before overwrite
+    force_trash_on_error: bool,     // copy to TEMP and send to garbage on trash errors
     halt_on_errors: bool,           // exit job if an error occurs
 }
 
@@ -65,6 +69,9 @@ struct CopyJobGlobalConfig {
     remove_others_matching: bool,       // remove matching files not present in source
     create_directories: bool,           // create non-existing directories
     keep_structure: bool,               // keep directory structure as in source
+    trash_on_delete: bool,              // use garbage bin instead of deleting
+    trash_on_overwrite: bool,           // send to garbage bin before overwrite
+    force_trash_on_error: bool,         // copy to TEMP and send to garbage on trash errors
     halt_on_errors: bool,               // exit job if an error occurs
 
     // the following parameters are defined through CLI arguments only
@@ -225,6 +232,9 @@ lazy_static! {
     // corresponding RE_VARMENTION_* instance
     static ref FMT_VARMENTION_LOC: String = String::from("%{*}");
     static ref FMT_VARMENTION_ENV: String = String::from("${*}");
+
+    // the temporary directory as a variable
+    static ref TEMP_DIR: PathBuf = env::temp_dir();
 }
 
 
@@ -448,6 +458,9 @@ fn extract_config(
         remove_others_matching: false,
         create_directories: true,
         keep_structure: true,
+        trash_on_delete: true,
+        trash_on_overwrite: false,
+        force_trash_on_error: false,
         halt_on_errors: false,
 
         // the following parameters are defined through CLI arguments only
@@ -475,6 +488,9 @@ fn extract_config(
         String::from("remove_others_matching"),
         String::from("create_directories"),
         String::from("keep_structure"),
+        String::from("trash_on_delete"),
+        String::from("trash_on_overwrite"),
+        String::from("force_trash_on_error"),
         String::from("halt_on_errors"),
         String::from("job"),
     );
@@ -678,6 +694,45 @@ fn extract_config(
     }
 
     // 12. halt on errors or continue
+    let cur_key = "trash_on_delete";
+    let cur_item = config_map.get(&cur_key);
+    match cur_item {
+        Some(item) => {
+            if !item.is_bool() {
+                return Err(_ec_error_invalid_config(&cur_key));
+            }
+            global_config.trash_on_delete = *item.as_bool().unwrap();
+        }
+        None => { /* OK to go, default already set */ }
+    }
+
+    // 13. halt on errors or continue
+    let cur_key = "trash_on_overwrite";
+    let cur_item = config_map.get(&cur_key);
+    match cur_item {
+        Some(item) => {
+            if !item.is_bool() {
+                return Err(_ec_error_invalid_config(&cur_key));
+            }
+            global_config.trash_on_overwrite = *item.as_bool().unwrap();
+        }
+        None => { /* OK to go, default already set */ }
+    }
+
+    // 14. halt on errors or continue
+    let cur_key = "force_trash_on_error";
+    let cur_item = config_map.get(&cur_key);
+    match cur_item {
+        Some(item) => {
+            if !item.is_bool() {
+                return Err(_ec_error_invalid_config(&cur_key));
+            }
+            global_config.force_trash_on_error = *item.as_bool().unwrap();
+        }
+        None => { /* OK to go, default already set */ }
+    }
+
+    // 15. halt on errors or continue
     let cur_key = "halt_on_errors";
     let cur_item = config_map.get(&cur_key);
     match cur_item {
@@ -723,6 +778,9 @@ fn extract_config(
                         remove_others_matching: global_config.remove_others_matching,
                         create_directories: global_config.create_directories,
                         keep_structure: global_config.keep_structure,
+                        trash_on_delete: global_config.trash_on_delete,
+                        trash_on_overwrite: global_config.trash_on_overwrite,
+                        force_trash_on_error: global_config.force_trash_on_error,
                         halt_on_errors: global_config.halt_on_errors,
                     };
                     for (key, item) in elem.as_map().unwrap().iter() {
@@ -897,6 +955,27 @@ fn extract_config(
                                 }
                                 job.keep_structure = *item.as_bool().unwrap();
                             }
+                            "trash_on_delete" => {
+                                let cur_key = "job/halt_on_errors";
+                                if !item.is_bool() {
+                                    return Err(_ec_error_invalid_config(&cur_key));
+                                }
+                                job.trash_on_delete = *item.as_bool().unwrap();
+                            }
+                            "trash_on_overwrite" => {
+                                let cur_key = "job/halt_on_errors";
+                                if !item.is_bool() {
+                                    return Err(_ec_error_invalid_config(&cur_key));
+                                }
+                                job.trash_on_overwrite = *item.as_bool().unwrap();
+                            }
+                            "force_trash_on_error" => {
+                                let cur_key = "job/halt_on_errors";
+                                if !item.is_bool() {
+                                    return Err(_ec_error_invalid_config(&cur_key));
+                                }
+                                job.force_trash_on_error = *item.as_bool().unwrap();
+                            }
                             "halt_on_errors" => {
                                 let cur_key = "job/halt_on_errors";
                                 if !item.is_bool() {
@@ -1034,6 +1113,8 @@ fn list_files_matching(
 ///     check_content: if overwrite, only overwrite when contents differ
 ///     follow_symlinks: follow symbolic links
 ///     create_directories: create directory if it does not exist yet
+///     trash_on_overwrite: to send to garbage bin instead of overwriting
+///     force_trash_on_error: attempt to trash from TEMP on trash errors
 ///
 
 fn copy_file (
@@ -1044,6 +1125,8 @@ fn copy_file (
     check_content: bool,
     follow_symlinks: bool,
     create_directories: bool,
+    trash_on_overwrite: bool,
+    force_trash_on_error: bool,
 ) -> Outcome {
     // normalize paths
     let source_path = PathBuf::from(
@@ -1053,6 +1136,9 @@ fn copy_file (
         // NOTE: https://doc.rust-lang.org/nightly/std/fs/fn.canonicalize.html#errors
         //       `canonicalize` returns an error if the target does not exist, thus
         //       we either get the canonicalied path or the original path.
+
+    // a flag that keeps track of whether we are overwriting or not
+    let mut overwriting = false;
 
     // check source and destination metadata (and whether or not they exist)
     match metadata(&source_path) {
@@ -1124,6 +1210,9 @@ fn copy_file (
                             }
                         }
                     }
+
+                    // if this point is reached we are actually overwriting
+                    overwriting = true;
                 }
                 Err(_) => {
                     // in case of error check whether or not the destination
@@ -1155,8 +1244,26 @@ fn copy_file (
                     }
                 }
             }
+
+            // try to send the file to garbage bin if configured to do so
+            if overwriting && trash_on_overwrite {
+                if let Err(_) = trash::delete(&destination_path) {
+                    if force_trash_on_error {
+                        let mut destination_temp = TEMP_DIR.clone();
+                        destination_temp.push(
+                            PathBuf::from(&destination_path).file_name().unwrap());
+                        if let Ok(_) = fs::copy(&destination_path, &destination_temp) {
+                            // last attempt to send to garbage: if it fails
+                            // the destination is overwritten unless copy
+                            // fails as well
+                            let _ = trash::delete(&destination_temp);
+                        }
+                    }
+                }
+            }
+
             // actually copy the file using OS API
-            let res = fs::copy(source_path, destination_path);
+            let res = fs::copy(&source_path, &destination_path);
             match res {
                 Ok(_) => {
                     // FileOpOutcome::Success is returned only here, after an
@@ -1184,11 +1291,15 @@ fn copy_file (
 ///
 ///     destination: the full specification of destination file
 ///     follow_symlinks: follow symbolic links
+///     trash_on_delete: to send to garbage bin instead of deleting
+///     force_trash_on_error: attempt to trash from TEMP on trash errors
 ///
 
 fn remove_file (
     destination: &PathBuf,
     follow_symlinks: bool,
+    trash_on_delete: bool,
+    force_trash_on_error: bool,
 ) -> Outcome {
     // normalize paths
     let destination_path = PathBuf::from(
@@ -1202,12 +1313,40 @@ fn remove_file (
             } else if d_stat.is_symlink() && !follow_symlinks {
                 return Outcome::Error(FOERR_DESTINATION_IS_SYMLINK);
             }
-            match fs::remove_file(destination_path) {
-                Ok(_) => {
+            if trash_on_delete {
+                if let Err(_) = trash::delete(&destination_path) {
+                    // only attempt to move to TEMP and then trash if
+                    // configured to do so otherwise just delete
+                    if force_trash_on_error {
+                        let mut destination_temp = TEMP_DIR.clone();
+                        destination_temp.push(
+                            PathBuf::from(&destination_path).file_name().unwrap());
+                        if let Ok(_) = fs::copy(&destination_path, &destination_temp) {
+                            // last attempt to send to garbage: if it fails
+                            // the destination is deleted anyway unless deletion
+                            // fails as well
+                            let _ = trash::delete(&destination_temp);
+                        }
+                    }
+                    match fs::remove_file(destination_path) {
+                        Ok(_) => {
+                            return Outcome::Success;
+                        }
+                        Err(_) => {
+                            return Outcome::Error(FOERR_DESTINATION_NOT_ACCESSIBLE);
+                        }
+                    }
+                } else {
                     return Outcome::Success;
                 }
-                Err(_) => {
-                    return Outcome::Error(FOERR_DESTINATION_NOT_ACCESSIBLE);
+            } else {
+                match fs::remove_file(destination_path) {
+                    Ok(_) => {
+                        return Outcome::Success;
+                    }
+                    Err(_) => {
+                        return Outcome::Error(FOERR_DESTINATION_NOT_ACCESSIBLE);
+                    }
                 }
             }
         }
@@ -1419,7 +1558,10 @@ fn run_single_job(
                                 job.skip_newer,
                                 job.check_content,
                                 job.follow_symlinks,
-                                job.create_directories) {
+                                job.create_directories,
+                                job.trash_on_overwrite,
+                                job.force_trash_on_error,
+                            ) {
                                     Outcome::Success => {
                                         num_files_copied += 1;
                                         if verbose {
@@ -1467,7 +1609,12 @@ fn run_single_job(
                 }
                 // if not remove_other_matching the vector is empty
                 for item in files_to_delete {
-                    match remove_file(&item, job.follow_symlinks) {
+                    match remove_file(
+                        &item,
+                        job.follow_symlinks,
+                        job.trash_on_delete,
+                        job.force_trash_on_error,
+                    ) {
                         Outcome::Success => {
                             if verbose {
                                 println!("{}", _format_message_rsj(
@@ -1595,9 +1742,9 @@ fn run_jobs(
 }
 
 
-use clap::Parser;
 
 // argument parsing and command execution: doc comments are used by clap
+use clap::Parser;
 
 /// Perform complex copy jobs according to criteria provided in a TOML file
 #[derive(Parser)]
@@ -1652,7 +1799,7 @@ fn _format_message_main(
                     msg_parsable,
                     &String::new())
             } else {
-                format!("info: {} ", msg_verbose)
+                format!("info: {}", msg_verbose)
             }
         }
     }
@@ -1685,7 +1832,7 @@ fn main() -> std::io::Result<()> {
                         global.config_file.as_os_str().to_str().unwrap_or(&String::new())),
                     None,
                     &String::new(),
-                    &format!("info: using configuration file {}",
+                    &format!("using configuration file {}",
                         global.config_file.as_os_str().to_str().unwrap_or(&String::new())),
                 ));
             }

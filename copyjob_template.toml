@@ -21,6 +21,9 @@ active_jobs = [
 # keep_structure = true ........... keep subdirectory structure, otherwise flat
 # halt_on_errors = false .......... halt operations upon first error (global/per job)
 # remove_others_matching = false .. remove matching files at destination if not in source
+# trash_on_delete = false ......... send to garbage bin instead of deleting
+# trash_on_overwrite = false ...... send to garbage bin before overwrite
+# force_trash_on_error = false .... if trash fails send to TEMP then try again
 #
 # all these parameters can be overridden in each job; any omitted parameter
 # assumes its default value (listed above)
@@ -35,7 +38,9 @@ create_directories = true
 keep_structure = true
 halt_on_errors = false
 remove_others_matching = false
-
+trash_on_delete = true
+trash_on_overwrite = false
+force_trash_on_error = false
 
 # after the global parameters we can add a variables section, to define
 # shortcuts that can be replaced in source and destination directories

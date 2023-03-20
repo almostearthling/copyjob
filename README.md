@@ -174,18 +174,21 @@ active jobs and the local variables, can only be defined at the global level.
 Overridable parameters are the following, and when omitted the corresponding
 default value will be used:
 
-| **Name**                 | **Default** | **Description**                                       |
-|--------------------------|-------------|-------------------------------------------------------|
-| `recursive`              | true        | walk subdirectories                                   |
-| `overwrite`              | true        | overwrite existing files                              |
-| `skip_newer`             | true        | skip if destination is more recent                    |
-| `check_content`          | false       | check contents of files using MD5 hash                |
-| `follow_symlinks`        | true        | follow symbolic links                                 |
-| `case_sensitive`         | true        | treat patterns/filenames as case sensitive            |
-| `create_directories`     | true        | create directory structure if missing                 |
-| `keep_structure`         | true        | keep subdirectory structure, otherwise flat           |
-| `halt_on_errors`         | false       | halt each job upon first error (unless overridden)    |
-| `remove_others_matching` | false       | remove matching files at destination if not in source |
+| **Name**                 | **Default** | **Description**                                                    |
+|--------------------------|-------------|--------------------------------------------------------------------|
+| `recursive`              | true        | walk subdirectories                                                |
+| `overwrite`              | true        | overwrite existing files                                           |
+| `skip_newer`             | true        | skip if destination is more recent                                 |
+| `check_content`          | false       | check contents of files using MD5 hash                             |
+| `follow_symlinks`        | true        | follow symbolic links                                              |
+| `case_sensitive`         | true        | treat patterns/filenames as case sensitive                         |
+| `create_directories`     | true        | create directory structure if missing                              |
+| `keep_structure`         | true        | keep subdirectory structure, otherwise flat                        |
+| `halt_on_errors`         | false       | halt each job upon first error (unless overridden)                 |
+| `trash_on_delete`        | false       | use garbage bin instead of deleting (unless overridden)            |
+| `trash_on_overwrite`     | false       | use garbage bin before overwriting (unless overridden)             |
+| `force_trash_on_error`   | false       | try to copy to TEMP and trash if attempt fails (unless overridden) |
+| `remove_others_matching` | false       | remove matching files at destination if not in source              |
 
 As said, a list of active jobs has to be defined, otherwise no job will be
 performed (although **copyjob** will not issue an error). This is done by
@@ -223,6 +226,20 @@ Notice that, while it's possible to omit many parameters as said above, any
 unknown parameter in the configuration file will be considered an error, and
 cause the abortion of the operation before any job execution: the offending
 parameter is reported unless the output is suppressed.
+
+Moving to the garbage bin (named *Recycle Bin*, *Trash* and in other ways on
+different desktop environments) is supported instead of both deleting files
+and also overwriting, respectively setting the `trash_on_delete` flag and the
+`trash_on_overwrite` flag to `true` (`trash_on_delete` is `true` by default).
+Trashing instead of removing or overwriting is actually *attempted*, and if
+it fails the destination is respectively deleted or overwritten anyway if the
+respective options are turned on. It is possible to attempt to *copy* the
+destination file to the *TEMP* directory and then send it to the garbage bin
+when the operation fail on the first attempt, however if this also fails the
+destination is deleted or overwritten anyway when **copyjob** is instructed
+to delete or overwrite. When overwriting, a file is only moved to the garbage
+bin when it is about to be overwritten - thus not when other conditions (such
+as age or contents checking) fail.
 
 A special mention is due for `remove_others_matching`: when set to `true`, the
 files that match the job *RE* specifications and do not exist in the source
@@ -266,6 +283,9 @@ configuration. The detailed list follows:
 | `create_directories`     | true        | create directory structure if missing                 |
 | `keep_structure`         | true        | keep subdirectory structure, otherwise flat           |
 | `halt_on_errors`         | false       | halt operations upon first error in this job          |
+| `trash_on_delete`        | false       | use garbage bin instead of deleting                   |
+| `trash_on_overwrite`     | false       | use garbage bin before overwriting                    |
+| `force_trash_on_error`   | false       | try to copy to TEMP and trash if attempt fails        |
 | `remove_others_matching` | false       | remove matching files at destination if not in source |
 
 The `patterns_exclude` and `patterns_exclude_dir` parameters are *optional*,
