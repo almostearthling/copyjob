@@ -21,12 +21,11 @@ active_jobs = [
 # keep_structure = true ........... keep subdirectory structure, otherwise flat
 # halt_on_errors = false .......... halt operations upon first error (global/per job)
 # remove_others_matching = false .. remove matching files at destination if not in source
-# trash_on_delete = false ......... send to garbage bin instead of deleting
-# trash_on_overwrite = false ...... send to garbage bin before overwrite
-# force_trash_on_error = false .... if trash fails send to TEMP then try again
+# trash_on_delete = true .......... try to send to garbage bin instead of deleting
+# trash_on_overwrite = false ...... try to send to garbage bin before overwrite
 #
 # all these parameters can be overridden in each job; any omitted parameter
-# assumes its default value (listed above)
+# assumes its default value (listed above).
 
 recursive = true
 overwrite = true
@@ -40,7 +39,6 @@ halt_on_errors = false
 remove_others_matching = false
 trash_on_delete = true
 trash_on_overwrite = false
-force_trash_on_error = false
 
 # after the global parameters we can add a variables section, to define
 # shortcuts that can be replaced in source and destination directories
@@ -80,7 +78,7 @@ DEST_BASE = '${HOME}/Documents/CopyJob'
 # * ${varname} is replaced by an environment variable
 #
 # note that a non-existing variable will be replaced by the empty string, in
-# a way similar to other environments such as shell scripts
+# a way similar to other environments such as shell scripts.
 
 [[job]]
 name = "Job1"
