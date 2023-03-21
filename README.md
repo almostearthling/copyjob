@@ -139,6 +139,14 @@ will be able to perform:
    is *Current Summary* followed by a space and a version number with no dots
    in it; this job will ignore all subdirectories of the source folder.
 
+Both jobs start searching in the *Documents/MyData* subfolder of the user home:
+this is achieved by using the `HOME` environment variable (it only works on
+UNIX-like systems, unless `HOME` is properly defined); also, the destination
+is in both cases a subfolder of the *CloudSync/SyncedDocs* folder that might
+or might not exist in the same user home directory. Because of the default
+configuration of **copyjob**, the appropriate destination folders are created
+by the utility itself in case they are not found.
+
 At the global level we instruct **copyjob** to treat file names as case
 insensitive, to make sure we don't miss files that could have be named
 slightly differently on operating systems such as Windows. Also, we define
@@ -308,12 +316,12 @@ job names are *always* case sensitive.
 
 ### Use of slashes in directories
 
-Slashes are universally intended as path level separators. On UNIX like
+Slashes are universally intended as path level separators. On UNIX-like
 systems, the forward slash is used and Windows normally uses the backslash.
-**copyjob** supports both forward and back slashes on Windows, while on UNIX
-like systems only the forward slash is accepted. On Windows all the forward
-slashes are converted to backslashes in the output (and in the actual file
-operations).
+**copyjob** supports both forward and back slashes on Windows, while on
+UNIX-like systems only the forward slash is accepted. On Windows all the
+forward slashes are converted to backslashes in the output (and in the actual
+file operations).
 
 
 ### Special directory markers
