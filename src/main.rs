@@ -1043,7 +1043,7 @@ fn list_files_matching(
         .follow_links(follow_symlinks)
         .into_iter()
         .filter_map(|e| e.ok()) {    // skip errors
-            if !entry.file_type().is_dir() && !(follow_symlinks 
+            if !entry.file_type().is_dir() && !(follow_symlinks
                && entry.file_type().is_symlink()) {
                 let mut dir_pathbuf = PathBuf::from(entry.path());
                 let dir_name = if dir_pathbuf.pop() {
@@ -1201,14 +1201,15 @@ fn copy_file (
                             }
                         }
                         Err(_) => {
+                            // if the destination directory is not present and
+                            // missing directories are to be created, only bail
+                            // out on directory creation errors; otherwise it
+                            // is safe to go on without further checks
                             if !create_directories {
                                 return Outcome::Error(FOERR_CANNOT_CREATE_DIR);
                             }
-                            match create_dir_all(&destination_dir) {
-                                Ok(_) => { /* safe to go */ }
-                                Err(_) => {
-                                    return Outcome::Error(FOERR_CANNOT_CREATE_DIR);
-                                }
+                            if let Err(_) = create_dir_all(&destination_dir) {
+                                return Outcome::Error(FOERR_CANNOT_CREATE_DIR);
                             }
                         }
                     }
@@ -1373,10 +1374,14 @@ fn _format_jobinfo_rsj(
     } else {
         match operation {
             OPERATION_JOB_BEGIN => {
-                format!("\
-                    operations in job {job}: {num_copy} file(s) to copy, \
-                    {num_delete} to possibly remove on destination"
-                )
+                if code == 0 {
+                    format!("\
+                        operations in job {job}: {num_copy} file(s) to copy, \
+                        {num_delete} to possibly remove on destination"
+                    )
+                } else {
+                    format!("error before job {job}: '{}'", format_err_verbose(code))
+                }
             }
             OPERATION_JOB_END => {
                 if code == 0 {
@@ -1453,7 +1458,8 @@ fn run_single_job(
                         &job.excludedir_pattern,
                         job.recursive,
                         job.follow_symlinks,
-                        job.case_sensitive).unwrap_or(Vec::new())
+                        job.case_sensitive,
+                    ).unwrap_or(Vec::new())
                 } else { Vec::new() };
                 if verbose {
                     println!("{}", _format_jobinfo_rsj(
