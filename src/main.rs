@@ -280,11 +280,11 @@ fn format_err_verbose(code: u64) -> String {
 // helper to format a parsable output line consistently
 fn format_parsable_output(
     context: &'static str,
-    name: &String,
+    name: &str,
     code: u64,
     operation: &str,
-    arg1: &String,
-    arg2: &String,
+    arg1: &str,
+    arg2: &str,
 ) -> String {
     let mname: String;
     let mtype: String;
@@ -344,8 +344,8 @@ fn _ec_error_invalid_config(key: &str) -> std::io::Error {
 
 fn _ec_replace_variables_in_string(
     pattern: &Regex,
-    format: &String,
-    source: &String,
+    format: &str,
+    source: &str,
     vars: &HashMap<String, String>,
 ) -> String {
     let mut result = String::from(source);
@@ -372,7 +372,7 @@ fn _ec_replace_variables_in_string(
 }
 
 fn _ec_replace_markers_in_string(
-    source: &String,
+    source: &str,
     user_home: &PathBuf,
     config_file_dir: &PathBuf,
 ) -> String {
@@ -403,7 +403,7 @@ fn _ec_replace_markers_in_string(
     String::from(result)
 }
 
-fn _ec_normalize_path_slashes(path: &String) -> String {
+fn _ec_normalize_path_slashes(path: &str) -> String {
     if cfg!(windows) {
         Regex::new("\\[\\]+")
             .unwrap()   // cannot panic for we know the RE is correct
@@ -417,7 +417,7 @@ fn _ec_normalize_path_slashes(path: &String) -> String {
     }
 }
 
-fn _ec_add_trailing_slashes(path: &String) -> String {
+fn _ec_add_trailing_slashes(path: &str) -> String {
     if cfg!(windows) {
         if path.ends_with("\\") || path.ends_with("/") {
             String::from(path)
@@ -1005,9 +1005,9 @@ fn extract_config(
 
 fn list_files_matching(
     search_dir: &PathBuf,
-    include_pattern: &String,
-    exclude_pattern: &String,
-    excludedir_pattern: &String,
+    include_pattern: &str,
+    exclude_pattern: &str,
+    excludedir_pattern: &str,
     recursive: bool,
     follow_symlinks: bool,
     case_sensitive: bool,
@@ -1321,7 +1321,7 @@ fn remove_file (
 
 fn _format_message_rsj(
     parsable_output: bool,
-    job: &String,
+    job: &str,
     operation: &str,
     code: u64,
     source: &PathBuf,
@@ -1360,7 +1360,7 @@ fn _format_message_rsj(
 
 fn _format_jobinfo_rsj(
     parsable_output: bool,
-    job: &String,
+    job: &str,
     operation: &str,
     code: u64,
     num_copy: usize,
@@ -1637,7 +1637,7 @@ fn run_single_job(
 /// suitable messages when needed.
 ///
 
-fn _format_message_rj(parsable_output: bool, job: &String, code: u64) -> String {
+fn _format_message_rj(parsable_output: bool, job: &str, code: u64) -> String {
     if parsable_output {
         format_parsable_output(
             CONTEXT_TASK, job, code, OPERATION_JOB_END,
@@ -1711,10 +1711,10 @@ struct Args {
 fn _format_message_main(
     parsable_output: bool,
     operation: &str,
-    name: &String,
+    name: &str,
     e: Option<std::io::Error>,
-    msg_parsable: &String,
-    msg_verbose: &String,
+    msg_parsable: &str,
+    msg_verbose: &str,
 ) -> String {
     match e {
         Some(err) => {
