@@ -24,3 +24,4 @@ clap = { version = "4.1.4", features = ["derive"] }
 strip = true        # strip executable
 opt-level = "z"     # optimize for size
 lto = true
+panic = 'abort'     # remove garbage strings from executable
