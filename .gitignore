@@ -1,0 +1,12 @@
+/_local
+/.cargo
+/TEST
+/scratch
+/copyjob_example.toml
+/copyjob_test.toml
+/Cargo.lock
+/TEST.zip
+/CopyJob.code-workspace
+/config.toml
+/launch.json
+/TODO.md
