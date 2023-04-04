@@ -2,14 +2,14 @@
 /// An utility to perform complex copy operations based on TOML files
 /// (c) 2023, Francesco Garosi
 
-use std::io::BufReader;
-use std::io::Read;
-use std::env;
-
 use std::fs;
 use std::fs::File;
 use std::fs::create_dir_all;
 use std::fs::metadata;
+
+use std::io::BufReader;
+use std::io::Read;
+use std::env;
 
 use lazy_static::lazy_static;
 
@@ -317,6 +317,12 @@ fn format_output_parsable(
         marg2 = String::from(arg2);
     }
 
+    // construct a JSON message that reports the context, the type of message,
+    // the result both as an integer (see the *ERR_* constants above) and as a
+    // short string, the operation (point in the context) being performed when
+    // the message is issued, and two (optional) arguments that may or may not
+    // contain a value, and whose value depends on the current context and/or
+    // the current operation; then return it as a String
     json!({
         "context": context,
         "message_type": mtype,
@@ -354,7 +360,7 @@ fn extract_config(
     // l1. create a specific error
     fn _ec_error_invalid_config(key: &str) -> std::io::Error {
         std::io::Error::new(std::io::ErrorKind::InvalidInput,
-            String::from(format!("{}:{}", format_err_parsable(ERR_INVALID_CONFIG_FILE), key))
+            String::from(format!("{}:{key}", format_err_parsable(ERR_INVALID_CONFIG_FILE)))
             .as_str())
     }
 
@@ -382,7 +388,7 @@ fn extract_config(
                 result = result.replace(&occurrence, &String::new());
             }
         }
-        String::from(result)
+        result
     }
 
     // l3. handle special path markers
@@ -400,20 +406,20 @@ fn extract_config(
                             result = String::from(&user_home
                                 .clone()
                                 .to_string_lossy()
-                                .to_string()) + &String::from(&result[1..]); // to preserve the slash
+                                .to_string()) + &result[1..]; // to preserve the slash
                         }
                         "CONFIG-FILE-DIR" => {
                             result = String::from(&config_file_dir
                                 .clone()
                                 .to_string_lossy()
-                                .to_string()) + &String::from(&result[1..]); // to preserve the slash
+                                .to_string()) + &result[1..]; // to preserve the slash
                         }
                         _ => { }
                     }
                 }
             }
         }
-        String::from(result)
+        result
     }
 
     // l4. normalize path slashes (forward+back & multiple)
@@ -798,13 +804,13 @@ fn extract_config(
                                 s = _ec_replace_variables_in_string(
                                     &RE_VARMENTION_LOC,
                                     &FMT_VARMENTION_LOC,
-                                    &String::from(s),
+                                    &s,
                                     &global_config.variables,
                                 );
                                 s = _ec_replace_variables_in_string(
                                     &RE_VARMENTION_ENV,
                                     &FMT_VARMENTION_ENV,
-                                    &String::from(s),
+                                    &s,
                                     &sys_variables,
                                 );
                                 s = _ec_replace_markers_in_string(
@@ -824,13 +830,13 @@ fn extract_config(
                                 s = _ec_replace_variables_in_string(
                                     &RE_VARMENTION_LOC,
                                     &FMT_VARMENTION_LOC,
-                                    &String::from(s),
+                                    &s,
                                     &global_config.variables,
                                 );
                                 s = _ec_replace_variables_in_string(
                                     &RE_VARMENTION_ENV,
                                     &FMT_VARMENTION_ENV,
-                                    &String::from(s),
+                                    &s,
                                     &sys_variables,
                                 );
                                 s = _ec_replace_markers_in_string(
@@ -1127,7 +1133,7 @@ fn copy_file (
             if s_stat.is_dir() {
                 return Outcome::Error(FOERR_SOURCE_IS_DIR);
             }
-            if s_stat.is_symlink() && !follow_symlinks {   // TODO: expected?
+            if s_stat.is_symlink() && !follow_symlinks {   // TODO: is it expected?
                 return Outcome::Error(FOERR_SOURCE_IS_SYMLINK);
             }
             match metadata(&destination_path) {
@@ -1343,8 +1349,8 @@ fn run_single_job(
     ) -> String {
         if parsable_output {
             format_output_parsable(CONTEXT_JOB, job, code, operation,
-                &String::from(source.to_str().unwrap_or("<unknown>")),
-                &String::from(destination.to_str().unwrap_or("<unknown>")))
+                &source.to_str().unwrap_or("<unknown>"),
+                &destination.to_str().unwrap_or("<unknown>"))
         } else {
             match operation {
                 OPERATION_JOB_COPY => {
@@ -1383,8 +1389,8 @@ fn run_single_job(
     ) -> String {
         if parsable_output {
             format_output_parsable(CONTEXT_JOB, job, code, operation,
-                &String::from(format!("{num_copy}")),
-                &String::from(format!("{num_delete}")),
+                &format!("{num_copy}"),
+                &format!("{num_delete}"),
             )
         } else {
             match operation {
@@ -1661,9 +1667,9 @@ fn run_jobs(
                 &String::new())
         } else {
             if code == 0 {
-                format!("job {} completed successfully", job)
+                format!("job {job} completed successfully")
             } else {
-                format!("job {} failed with error '{}'", job, format_err_verbose(code))
+                format!("job {job} failed with error '{}'", format_err_verbose(code))
             }
         }
     }
@@ -1741,9 +1747,9 @@ fn main() -> std::io::Result<()> {
                         code,
                         operation,
                         msg_parsable,
-                        &String::from(err.to_string()))
+                        &err.to_string())
                 } else {
-                    format!("error: {} / {}", msg_verbose, err.to_string())
+                    format!("error: {msg_verbose} / {}", err.to_string())
                 }
             }
             _ => {
@@ -1756,7 +1762,7 @@ fn main() -> std::io::Result<()> {
                         msg_parsable,
                         &String::new())
                 } else {
-                    format!("info: {}", msg_verbose)
+                    format!("info: {msg_verbose}")
                 }
             }
         }
@@ -1782,8 +1788,7 @@ fn main() -> std::io::Result<()> {
                 println!("{}", _format_message_main(
                     args.parsable_output,
                     OPERATION_CONFIG,
-                    &String::from(
-                        global.config_file.as_os_str().to_str().unwrap_or(&String::new())),
+                    &global.config_file.as_os_str().to_str().unwrap_or(&String::new()),
                     None,
                     &String::new(),
                     &format!("using configuration file {}",
