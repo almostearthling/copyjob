@@ -235,7 +235,7 @@ lazy_static! {
 
 
 // helper to convert a list of regexp patterns into a single ORed regexp
-fn _combine_regexp_patterns(res: &Vec<String>) -> String {
+fn combine_regexp_patterns(res: &Vec<String>) -> String {
     format!("({})", String::from(res.join("|")))
 }
 
@@ -278,7 +278,7 @@ fn format_err_verbose(code: u64) -> String {
 
 
 // helper to format a parsable output line consistently
-fn format_parsable_output(
+fn format_output_parsable(
     context: &'static str,
     name: &str,
     code: u64,
@@ -320,6 +320,7 @@ fn format_parsable_output(
 }
 
 
+
 /// Extract the configuration from a TOML file, given the file name and the
 /// pertaining arguments as resulting from the command line. A description of
 /// the arguments follows:
@@ -332,113 +333,114 @@ fn format_parsable_output(
 /// configurations if successful, otherwise an error containing a string that
 /// briefly describes the error and possibly where it occurred.
 ///
-/// The following lines also include some utilities for string replacement
+/// As internal functions it also includes utilities for string replacement
 /// in the handled paths.
-///
 
-fn _ec_error_invalid_config(key: &str) -> std::io::Error {
-    std::io::Error::new(std::io::ErrorKind::InvalidInput,
-        String::from(format!("{}:{}", format_err_parsable(ERR_INVALID_CONFIG_FILE), key))
-        .as_str())
-}
-
-fn _ec_replace_variables_in_string(
-    pattern: &Regex,
-    format: &str,
-    source: &str,
-    vars: &HashMap<String, String>,
-) -> String {
-    let mut result = String::from(source);
-
-    // mimick shell by replacing undefined variables with the empty string:
-    // since the same function is used for both local and environment vars,
-    // this represents a difference with the Python version, that considered
-    // mentioning an undefined local variable a fatal error
-    // WARNING: this actually assumes that the regular expression pattern
-    //          "[%$]\{[a-zA-Z_][a-zA-Z0-9_]*\}" cannot appear in the source or
-    //          the destination directory within job definitions
-
-    while let Some(caps) = pattern.captures(&result.as_str()) {
-        let varname = caps.get(1).map_or("", |m| m.as_str());
-        let occurrence = format.replace("*", &varname);
-        if let Some(replacement) = vars.get(varname) {
-            result = result.replace(&occurrence, replacement);
-        } else {
-            result = result.replace(&occurrence, &String::new());
-        }
-    }
-
-    String::from(result)
-}
-
-fn _ec_replace_markers_in_string(
-    source: &str,
-    user_home: &PathBuf,
-    config_file_dir: &PathBuf,
-) -> String {
-    let mut result = String::from(source);
-
-    for (mkey, mlist) in DIR_MARKERS.clone().iter() {
-        for marker in mlist {
-            if result.starts_with(*marker) {
-                match *mkey {
-                    "USER-HOME" => {
-                        result = String::from(&user_home
-                            .clone()
-                            .to_string_lossy()
-                            .to_string()) + &String::from(&result[1..]); // to preserve the slash
-                    }
-                    "CONFIG-FILE-DIR" => {
-                        result = String::from(&config_file_dir
-                            .clone()
-                            .to_string_lossy()
-                            .to_string()) + &String::from(&result[1..]); // to preserve the slash
-                    }
-                    _ => { }
-                }
-            }
-        }
-    }
-
-    String::from(result)
-}
-
-fn _ec_normalize_path_slashes(path: &str) -> String {
-    if cfg!(windows) {
-        Regex::new("\\[\\]+")
-            .unwrap()   // cannot panic for we know the RE is correct
-            .replace_all(&path.replace("/", "\\"), "\\")
-            .to_string()
-    } else {
-        Regex::new("/[/]+")
-            .unwrap()   // cannot panic for we know the RE is correct
-            .replace_all(&path.replace("\\", "/"), "/")
-            .to_string()
-    }
-}
-
-fn _ec_add_trailing_slashes(path: &str) -> String {
-    if cfg!(windows) {
-        if path.ends_with("\\") || path.ends_with("/") {
-            String::from(path)
-        } else {
-            String::from(path.to_owned() + "\\")
-        }
-    } else {
-        if path.ends_with("/") {
-            String::from(path)
-        } else {
-            String::from(path.to_owned() + "/")
-        }
-    }
-}
-
-// actual function
 fn extract_config(
     config_file: &PathBuf,
     verbose: bool,
     parsable_output: bool,
 ) -> std::io::Result<(CopyJobGlobalConfig, Vec<CopyJobConfig>)> {
+
+    // local helpers:
+
+    // l1. create a specific error
+    fn _ec_error_invalid_config(key: &str) -> std::io::Error {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput,
+            String::from(format!("{}:{}", format_err_parsable(ERR_INVALID_CONFIG_FILE), key))
+            .as_str())
+    }
+
+    // l2. handle environment and local variables
+    fn _ec_replace_variables_in_string(
+        pattern: &Regex,
+        format: &str,
+        source: &str,
+        vars: &HashMap<String, String>,
+    ) -> String {
+        let mut result = String::from(source);
+        // mimick shell by replacing undefined variables with the empty string:
+        // since the same function is used for both local and environment vars,
+        // this represents a difference with the Python version, that considered
+        // mentioning an undefined local variable a fatal error
+        // WARNING: this actually assumes that the regular expression pattern
+        //          "[%$]\{[a-zA-Z_][a-zA-Z0-9_]*\}" cannot appear in the source or
+        //          the destination directory within job definitions
+        while let Some(caps) = pattern.captures(&result.as_str()) {
+            let varname = caps.get(1).map_or("", |m| m.as_str());
+            let occurrence = format.replace("*", &varname);
+            if let Some(replacement) = vars.get(varname) {
+                result = result.replace(&occurrence, replacement);
+            } else {
+                result = result.replace(&occurrence, &String::new());
+            }
+        }
+        String::from(result)
+    }
+
+    // l3. handle special path markers
+    fn _ec_replace_markers_in_string(
+        source: &str,
+        user_home: &PathBuf,
+        config_file_dir: &PathBuf,
+    ) -> String {
+        let mut result = String::from(source);
+        for (mkey, mlist) in DIR_MARKERS.clone().iter() {
+            for marker in mlist {
+                if result.starts_with(*marker) {
+                    match *mkey {
+                        "USER-HOME" => {
+                            result = String::from(&user_home
+                                .clone()
+                                .to_string_lossy()
+                                .to_string()) + &String::from(&result[1..]); // to preserve the slash
+                        }
+                        "CONFIG-FILE-DIR" => {
+                            result = String::from(&config_file_dir
+                                .clone()
+                                .to_string_lossy()
+                                .to_string()) + &String::from(&result[1..]); // to preserve the slash
+                        }
+                        _ => { }
+                    }
+                }
+            }
+        }
+        String::from(result)
+    }
+
+    // l4. normalize path slashes (forward+back & multiple)
+    fn _ec_normalize_path_slashes(path: &str) -> String {
+        if cfg!(windows) {
+            Regex::new("\\[\\]+")
+                .unwrap()   // cannot panic for we know the RE is correct
+                .replace_all(&path.replace("/", "\\"), "\\")
+                .to_string()
+        } else {
+            Regex::new("/[/]+")
+                .unwrap()   // cannot panic for we know the RE is correct
+                .replace_all(&path.replace("\\", "/"), "/")
+                .to_string()
+        }
+    }
+
+    // l5. add trailing slashes
+    fn _ec_add_trailing_slashes(path: &str) -> String {
+        if cfg!(windows) {
+            if path.ends_with("\\") || path.ends_with("/") {
+                String::from(path)
+            } else {
+                String::from(path.to_owned() + "\\")
+            }
+        } else {
+            if path.ends_with("/") {
+                String::from(path)
+            } else {
+                String::from(path.to_owned() + "/")
+            }
+        }
+    }
+
     // here we also set default values
     let mut global_config = CopyJobGlobalConfig {
         active_jobs: Vec::new(),
@@ -843,7 +845,7 @@ fn extract_config(
                                         if s.len() > 0 { li.push(String::from(s)); }
                                     }
                                 }
-                                job.include_pattern = _combine_regexp_patterns(&li);
+                                job.include_pattern = combine_regexp_patterns(&li);
                             }
                             "patterns_exclude" => {
                                 let cur_key = "job/patterns_exclude";
@@ -856,7 +858,7 @@ fn extract_config(
                                         if s.len() > 0 { li.push(String::from(s)); }
                                     }
                                 }
-                                job.exclude_pattern = _combine_regexp_patterns(&li);
+                                job.exclude_pattern = combine_regexp_patterns(&li);
                             }
                             "patterns_exclude_dir" => {
                                 let cur_key = "job/patterns_exclude_dir";
@@ -869,7 +871,7 @@ fn extract_config(
                                         if s.len() > 0 { li.push(String::from(s)); }
                                     }
                                 }
-                                job.excludedir_pattern = _combine_regexp_patterns(&li);
+                                job.excludedir_pattern = combine_regexp_patterns(&li);
                             }
                             "recursive" => {
                                 let cur_key = "job/recursive";
@@ -1001,7 +1003,6 @@ fn extract_config(
 /// if requested
 ///
 /// NOTE: skip errors code, see: https://github.com/BurntSushi/walkdir/blob/master/README.md
-///
 
 fn list_files_matching(
     search_dir: &PathBuf,
@@ -1086,7 +1087,6 @@ fn list_files_matching(
 ///     follow_symlinks: follow symbolic links
 ///     create_directories: create directory if it does not exist yet
 ///     trash_on_overwrite: to send to garbage bin instead of overwriting
-///
 
 fn copy_file (
     source: &PathBuf,
@@ -1253,7 +1253,6 @@ fn copy_file (
 ///     destination: the full specification of destination file
 ///     follow_symlinks: follow symbolic links
 ///     trash_on_delete: to send to garbage bin instead of deleting
-///
 
 fn remove_file (
     destination: &PathBuf,
@@ -1315,97 +1314,100 @@ fn remove_file (
 /// NOTE: writes to stdout/stderr
 /// NOTE: machine readable prefix of this section is JOB
 ///
-/// The following lines also include some simple formatters to ease up writing
+/// As internal functions it also includes simple formatters for writing
 /// suitable messages when needed.
-///
 
-fn _format_message_rsj(
-    parsable_output: bool,
-    job: &str,
-    operation: &str,
-    code: u64,
-    source: &PathBuf,
-    destination: &PathBuf,
-) -> String {
-    if parsable_output {
-        format_parsable_output(CONTEXT_JOB, job, code, operation,
-            &String::from(source.to_str().unwrap_or("<unknown>")),
-            &String::from(destination.to_str().unwrap_or("<unknown>")))
-    } else {
-        match operation {
-            OPERATION_JOB_COPY => {
-                if code == 0 {
-                    format!("copied in job {job}: {} => {}",
-                        source.display(), destination.display())
-                } else {
-                    format!("error in job {job}: '{}' while copying {} => {}",
-                        format_err_verbose(code), source.display(),
-                        destination.display())
-                }
-            }
-            OPERATION_JOB_DEL => {
-                if code == 0 {
-                    format!("removed in job {job}: {}", destination.display())
-                } else {
-                    format!("error in job {job}: '{}' while removing {}",
-                        format_err_verbose(code), destination.display())
-                }
-            }
-            op => {
-                format!("unexpected operation: {op}")
-            }
-        }
-    }
-}
-
-fn _format_jobinfo_rsj(
-    parsable_output: bool,
-    job: &str,
-    operation: &str,
-    code: u64,
-    num_copy: usize,
-    num_delete: usize,
-) -> String {
-    if parsable_output {
-        format_parsable_output(CONTEXT_JOB, job, code, operation,
-            &String::from(format!("{num_copy}")),
-            &String::from(format!("{num_delete}")),
-        )
-    } else {
-        match operation {
-            OPERATION_JOB_BEGIN => {
-                if code == 0 {
-                    format!("\
-                        operations in job {job}: {num_copy} file(s) to copy, \
-                        {num_delete} to possibly remove on destination"
-                    )
-                } else {
-                    format!("error before job {job}: '{}'", format_err_verbose(code))
-                }
-            }
-            OPERATION_JOB_END => {
-                if code == 0 {
-                    format!("\
-                        results for job {job}: {num_copy} file(s) copied, \
-                        {num_delete} removed on destination"
-                    )
-                } else {
-                    format!("error in job {job}: '{}'", format_err_verbose(code))
-                }
-            }
-            op => {
-                format!("unexpected operation: {op}")
-            }
-        }
-    }
-}
-
-// actual function
 fn run_single_job(
     job: &CopyJobConfig,
     verbose: bool,
     parsable_output: bool,
 ) -> Outcome {
+
+    // local helpers:
+
+    // l1. format a message (both machine readable and verbose output)
+    fn _format_message_rsj(
+        parsable_output: bool,
+        job: &str,
+        operation: &str,
+        code: u64,
+        source: &PathBuf,
+        destination: &PathBuf,
+    ) -> String {
+        if parsable_output {
+            format_output_parsable(CONTEXT_JOB, job, code, operation,
+                &String::from(source.to_str().unwrap_or("<unknown>")),
+                &String::from(destination.to_str().unwrap_or("<unknown>")))
+        } else {
+            match operation {
+                OPERATION_JOB_COPY => {
+                    if code == 0 {
+                        format!("copied in job {job}: {} => {}",
+                            source.display(), destination.display())
+                    } else {
+                        format!("error in job {job}: '{}' while copying {} => {}",
+                            format_err_verbose(code), source.display(),
+                            destination.display())
+                    }
+                }
+                OPERATION_JOB_DEL => {
+                    if code == 0 {
+                        format!("removed in job {job}: {}", destination.display())
+                    } else {
+                        format!("error in job {job}: '{}' while removing {}",
+                            format_err_verbose(code), destination.display())
+                    }
+                }
+                op => {
+                    format!("unexpected operation: {op}")
+                }
+            }
+        }
+    }
+
+    // l2. format job information (both machine readable and verbose output)
+    fn _format_jobinfo_rsj(
+        parsable_output: bool,
+        job: &str,
+        operation: &str,
+        code: u64,
+        num_copy: usize,
+        num_delete: usize,
+    ) -> String {
+        if parsable_output {
+            format_output_parsable(CONTEXT_JOB, job, code, operation,
+                &String::from(format!("{num_copy}")),
+                &String::from(format!("{num_delete}")),
+            )
+        } else {
+            match operation {
+                OPERATION_JOB_BEGIN => {
+                    if code == 0 {
+                        format!("\
+                            operations in job {job}: {num_copy} file(s) to copy, \
+                            {num_delete} to possibly remove on destination"
+                        )
+                    } else {
+                        format!("error before job {job}: '{}'", format_err_verbose(code))
+                    }
+                }
+                OPERATION_JOB_END => {
+                    if code == 0 {
+                        format!("\
+                            results for job {job}: {num_copy} file(s) copied, \
+                            {num_delete} removed on destination"
+                        )
+                    } else {
+                        format!("error in job {job}: '{}'", format_err_verbose(code))
+                    }
+                }
+                op => {
+                    format!("unexpected operation: {op}")
+                }
+            }
+        }
+    }
+
     // source and destination must exist and be canonicalizeable
     let source_directory = PathBuf::from(
         &job.source_dir.canonicalize().unwrap_or(PathBuf::new()));
@@ -1633,30 +1635,32 @@ fn run_single_job(
 /// NOTE: writes to stdout/stderr
 /// NOTE: machine readable prefix of this section is TASK
 ///
-/// The following lines also include a simple formatter to ease up writing
+/// As internal functions it also includes simple formatters for writing
 /// suitable messages when needed.
-///
 
-fn _format_message_rj(parsable_output: bool, job: &str, code: u64) -> String {
-    if parsable_output {
-        format_parsable_output(
-            CONTEXT_TASK, job, code, OPERATION_JOB_END,
-            &String::new(),
-            &String::new())
-    } else {
-        if code == 0 {
-            format!("job {} completed successfully", job)
-        } else {
-            format!("job {} failed with error '{}'", job, format_err_verbose(code))
-        }
-    }
-}
-
-// actual function
 fn run_jobs(
     global_config: &CopyJobGlobalConfig,
     job_configs: &Vec<CopyJobConfig>,
 ) -> std::io::Result<()> {
+
+    // local helpers:
+
+    // l1. format a message (both machine readable and verbose output)
+    fn _format_message_rj(parsable_output: bool, job: &str, code: u64) -> String {
+        if parsable_output {
+            format_output_parsable(
+                CONTEXT_TASK, job, code, OPERATION_JOB_END,
+                &String::new(),
+                &String::new())
+        } else {
+            if code == 0 {
+                format!("job {} completed successfully", job)
+            } else {
+                format!("job {} failed with error '{}'", job, format_err_verbose(code))
+            }
+        }
+    }
+
     for job in job_configs {
         if global_config.active_jobs.contains(&job.job_name) {
             match run_single_job(job, global_config.verbose, global_config.parsable_output) {
@@ -1707,50 +1711,50 @@ struct Args {
 }
 
 
-// simple formatter to write a message from the main entry point
-fn _format_message_main(
-    parsable_output: bool,
-    operation: &str,
-    name: &str,
-    e: Option<std::io::Error>,
-    msg_parsable: &str,
-    msg_verbose: &str,
-) -> String {
-    match e {
-        Some(err) => {
-            if parsable_output {
-                let code = u64::try_from(
-                    err.raw_os_error().unwrap_or(9999)).unwrap_or(9999);
-                format_parsable_output(
-                    CONTEXT_MAIN,
-                    name,
-                    code,
-                    operation,
-                    msg_parsable,
-                    &String::from(err.to_string()))
-            } else {
-                format!("error: {} / {}", msg_verbose, err.to_string())
+// entry point: mandatory arguments are handled by the parser
+fn main() -> std::io::Result<()> {
+
+    // formatter to write a message (here for coherence with other functions)
+    fn _format_message_main(
+        parsable_output: bool,
+        operation: &str,
+        name: &str,
+        e: Option<std::io::Error>,
+        msg_parsable: &str,
+        msg_verbose: &str,
+    ) -> String {
+        match e {
+            Some(err) => {
+                if parsable_output {
+                    let code = u64::try_from(
+                        err.raw_os_error().unwrap_or(9999)).unwrap_or(9999);
+                    format_output_parsable(
+                        CONTEXT_MAIN,
+                        name,
+                        code,
+                        operation,
+                        msg_parsable,
+                        &String::from(err.to_string()))
+                } else {
+                    format!("error: {} / {}", msg_verbose, err.to_string())
+                }
             }
-        }
-        _ => {
-            if parsable_output {
-                format_parsable_output(
-                    CONTEXT_MAIN,
-                    name,
-                    ERR_OK,
-                    operation,
-                    msg_parsable,
-                    &String::new())
-            } else {
-                format!("info: {}", msg_verbose)
+            _ => {
+                if parsable_output {
+                    format_output_parsable(
+                        CONTEXT_MAIN,
+                        name,
+                        ERR_OK,
+                        operation,
+                        msg_parsable,
+                        &String::new())
+                } else {
+                    format!("info: {}", msg_verbose)
+                }
             }
         }
     }
-}
 
-
-// entry point: mandatory arguments are handled by the parser
-fn main() -> std::io::Result<()> {
     let args = Args::parse();
 
     // configuration file name is canonicalized in order to get a correct
