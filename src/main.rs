@@ -26,6 +26,7 @@ use trash;
 use cfgmap::{CfgValue, CfgMap, Condition::*, Checkable};
 use data_encoding::HEXLOWER;
 use sha2::{Digest, Sha256};
+use serde_json::json;
 
 
 
@@ -316,7 +317,13 @@ fn format_output_parsable(
         marg2 = String::from(arg2);
     }
 
-    format!("{context}|{mtype}:{code}/{mresult}|{operation}:{mname}|{marg1}|{marg2}")
+    json!({
+        "context": context,
+        "message_type": mtype,
+        "result": [code, mresult],
+        "operation": [operation, mname],
+        "args": [marg1, marg2]
+    }).to_string()
 }
 
 
@@ -1701,7 +1708,7 @@ struct Args {
     #[arg(short, long)]
     quiet: bool,
 
-    /// Generate machine readable output
+    /// Generate machine readable output (JSON)
     #[arg(short = 'p', long = "parsable-output")]
     parsable_output: bool,
 

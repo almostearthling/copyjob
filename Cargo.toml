@@ -1,6 +1,6 @@
 [package]
 name = "copyjob"
-version = "0.3.4"
+version = "0.4.1"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -16,6 +16,7 @@ data-encoding = "2.3.2"
 lazy_static = "1.4.0"
 walkdir = "2.3.2"
 toml = "0.7.2"
+serde_json = "1.0.95"
 cfgmap = { version = "0.4.0", features = ["from_toml"] }
 clap = { version = "4.1.4", features = ["derive"] }
 

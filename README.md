@@ -56,7 +56,7 @@ Arguments:
 
 Options:
   -q, --quiet            Suppress all output
-  -p, --parsable-output  Generate machine readable output
+  -p, --parsable-output  Generate machine readable output (JSON)
   -h, --help             Print help
   -V, --version          Print version
 ```
@@ -64,16 +64,16 @@ Options:
 The command called with `--quiet` or `-q` as parameter, followed by the
 configuration file path, will only exit with an *error* value in case of
 unrecoverable errors, and when invoked with the `--parsable-output` or `-p`
-parameter will produce output that would be easier for another program to
-parse, although more difficult for a human to read. The basic invocation is
+parameter will produce output in JSON format, that would be easier for another
+program to parse, although more difficult for a human to read. The basic
+invocation is
 
 ```sh
 copyjob path/to/config.toml
 ```
 
 which will read the file `path/to/config.toml` and perform the jobs that the
-user defined and activated there, producing a readable (although messy)
-output.
+user defined and activated there, producing a readable (yet messy) output.
 
 
 ## An example of configuration file
@@ -360,10 +360,10 @@ The output can be somewhat confusing, and it might be useful to redirect it
 to a file in complex or long tasks. Errors are written to *stderr*, so it is
 probably appropriate to redirect *stderr* to *stdout* for logging.
 
-A more compact output can be produced, that is easier to split and parse with
-simple string operations: although **copyjob** is suitable to be used directly
-from the CLI, it can be wrapped into a more user-friendly tool, be it still
-CLI oriented or providing a GUI.
+A compact JSON output can be produced, easier to parse for other programs:
+although **copyjob** is suitable to be used directly from the CLI, it can be
+wrapped into a more user-friendly tool, be it still CLI oriented or providing
+a GUI.
 
 
 ## Why **copyjob**?
