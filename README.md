@@ -176,8 +176,8 @@ A template configuration file is provided, *copyjob_template.toml*.
 
 Most parameters can be defined at the global level in the configuration file,
 and the values defined here are shared by all jobs. On the other hand, jobs
-can override such values partly or even totally - apart from the list of
-active jobs and the local variables, can only be defined at the global level.
+can override such values partly or even totally - except for the list of active
+jobs and the local variables, which can only be defined at the global level.
 
 Overridable parameters are the following, and when omitted the corresponding
 default value will be used:
@@ -248,10 +248,10 @@ contents checking) fail.
 
 A special mention is due for `remove_others_matching`: when set to `true`, the
 files that match the job *RE* specifications and do not exist in the source
-directories are *permanently removed* on the destination directory. This still
-yields when copy operations from the source to the destination do not succeed
-for any reason. The rationale behind this choice is, that an user that turns
-that particular parameter on would probably want to clean up the folders at the
+directories are *removed* on the destination directory. This still yields when
+copy operations from the source to the destination do not succeed for any
+reason. The rationale behind this choice is, that an user that turns that
+particular parameter on would probably want to clean up the folders at the
 destination from unnecessary files, even when there are versions of the source
 documents (for example newer) that cause the copy operation to fail.
 
