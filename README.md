@@ -238,13 +238,11 @@ Moving to the garbage bin (named *Recycle Bin*, *Trash* and in other ways on
 different desktop environments) is supported instead of both deleting files
 and also overwriting, respectively setting the `trash_on_delete` flag and the
 `trash_on_overwrite` flag to `true` (`trash_on_delete` is `true` by default).
-Trashing instead of removing or overwriting is actually *attempted*, and if
+Recycling instead of removing or overwriting is actually *attempted*, and if
 it fails the destination is respectively deleted or overwritten anyway if the
-respective options are turned on. However, if this fails, the destination is
-deleted or overwritten anyway when **copyjob** is instructed to delete or
-overwrite. When overwriting, a file is only moved to the garbage bin when it
-is about to be overwritten - thus not when other conditions (such as age or
-contents checking) fail.
+respective options are turned on. When overwriting, a file is only moved to
+the garbage bin when it is supposed to be overwritten - thus not when other
+conditions (such as age or contents checking) fail.
 
 A special mention is due for `remove_others_matching`: when set to `true`, the
 files that match the job *RE* specifications and do not exist in the source
@@ -379,11 +377,11 @@ optimization. What I needed was something that could easily copy some
 documents from one directory to another, while performing even cumbersome
 selections of files in the directory of origin. I needed no network support:
 the common synchronization utilities (as [Nextcloud](https://nextcloud.com/))
-would do this for me. I have to share documents with teams, these documents
+would do this for me. I need to share documents with teams, these documents
 are in fact produced by different people, that use different naming
 strategies: of course, a better practice would be to change file names
 according to some logical pattern, but this is not always possible, mostly
-because these files tend to propagate via other means than common
+because these files tend to propagate via other means (e-mail) than common
 repositories - and, in such cases, different names might be interpreted as
 different documents or at least as different versions of the same document.
 Thus I decided that the best strategy was to use and distribute documents
@@ -395,8 +393,8 @@ understand and can cope with. However, I cannot share these directories
 with my collaborators, both because they have a structure that doesn't
 make much sense if you don't see the whole thing and because the folders
 contain much more files than the ones that have to be accessible to the
-team. So I decided to write this small utility. Now, for each directory
-containing files that I have to share, I write a simple *copyjob.toml*
+team. So I decided to develop this small utility. Now, for each directory
+containing files that I need to share, I write a simple *copyjob.toml*
 file. A script in the main document folder finds them recursively and
 executes **copyjob** on each of them:
 
@@ -408,7 +406,7 @@ find . -name 'copyjob.toml' -exec copyjob {} \;
 It took me an afternoon to write it in Python, and another day to fine-tune
 the Python version in order to have a prettier output and all the needed
 parameters and features. But since I wanted to experiment Rust, I decided
-that such a simple tool could have been suitable for my first Rust program,
+that such a simple tool could have been suitable for my first Rust project,
 and so it was. It took me *weeks*. I'm still working on a CLI wrapper for
 **copyjob**, this time in Python, to cover logging and console output.
 
@@ -417,16 +415,16 @@ to get acquainted with it and I'm slowly getting used to the Rust philosophy.
 And, as a side effect, I keep the folders that I share with my colleagues
 clean and tidy.
 
-I'm planning to rewrite the core (namely, the resident part) of
-[When](https://github.com/almostearthling/when-command) in Rust: at the
-moment that project is temporarily quiescent because I'm not using Linux as
-my desktop operating system in these days, and because I found some issues
-in following the continuous changes in the *DBus* messages in the versions
-of Ubuntu Linux that followed the 18.04 release. The plan is to make the next
-version of *When* platform independent (while trying to keep most features
-across platforms), separating the core part from the configuration GUI - that
-will still be written in Python. Then, I will be able to use **copyjob** in
-*When* jobs.
+I'm struggling nowadays to rewrite the core (namely, the resident part)
+of [When](https://github.com/almostearthling/when-command) in Rust: at the
+moment the original project is temporarily quiescent because I'm not using
+Linux as my desktop operating system at this time, and because I found some
+issues in following the continuous changes in the *DBus* messages in the
+versions of Ubuntu Linux that followed the 18.04 release. The plan is to make
+the next version of *When* platform independent (while trying to keep most
+features across platforms), separating the core part from the configuration
+GUI - that will still be written in Python. Then, at least, I will be able to
+use **copyjob** in *When* jobs.
 
 There is an entire paragraph in this document, named *Disclaimer*, that
 basically states that anyone should use this small utility at their own risk.
@@ -434,7 +432,7 @@ That said, while it's true that **copyjob** can *permanently delete* files at
 the destination directory (if instructed to do so), one should also consider
 what to use **copyjob** for: it's designed to automate replication tasks in a
 way that attempts to keep the destination directory structure consistent
-through consecutive updates. Normally there should'nt be "unique" documents in
+through consecutive updates. Normally there shouldn't be "unique" documents in
 the destination folder, but only copies managed by **copyjob** itself. In this
 case it's quite safe to use it, as source documents are *never* deleted or
 modified.
