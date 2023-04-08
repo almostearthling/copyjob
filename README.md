@@ -127,14 +127,14 @@ recursive = false
 This very simple configuration file defines two different jobs that **copyjob**
 will be able to perform:
 
-1. **Reports**: will copy Word&trade;, Excel&trade; and PDF files whose names
+1. *Reports*: will copy Word&trade;, Excel&trade; and PDF files whose names
    begin with the word *Report* followed by an underscore and any other
    characters: the job will copy both old and new Word and Excel files (the
    *RE* states that the *x* at the end is optional); this job walks through
    subdirectories, but any matching files found in the subdirectories will be
    copied in the destination folder without recreating the source directory
    structure,
-2. **CurrentSummary**: will copy all the PowerPoint&trade; presentations,
+2. *CurrentSummary*: will copy all the PowerPoint&trade; presentations,
    created with either older or recent editions of PowerPoint, whose file name
    is *Current Summary* followed by a space and a version number with no dots
    in it; this job will ignore all subdirectories of the source folder.
@@ -158,8 +158,8 @@ local variable `DEST_BASE` to `"/cloud/Synced"`, so that all the defined
 jobs that mention this variable (in this case, both) change accordingly.
 
 Although the configuration file defines two different jobs, in this case
-only one of them will be performed, that is **Reports**: this happens
-because the **CurrentSummary** job is commented out in the `active_jobs`
+only one of them will be performed, that is *Reports*: this happens
+because the *CurrentSummary* job is commented out in the `active_jobs`
 list. This is useful when some jobs have to be temporarily excluded
 especially in highly automated tasks.
 
@@ -222,7 +222,7 @@ VAR2 = "/a/path/chunk"
 ...
 ```
 
-where VAR1, VAR2 and so on are alphanumeric strings beginning with an
+where `VAR1`, `VAR2` and so on are alphanumeric strings that begin with an
 alphabetic character. Casing is free, and occurrences are case sensitive.
 Local variables can mention environment variables: mentioning an undefined
 variable will replace the occurrence with the empty string, thus mimicking the
