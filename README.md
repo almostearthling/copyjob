@@ -444,7 +444,7 @@ issues, and possible errors during copy only depend on OS issues such as user
 rights on destination directories and files.
 
 I actually use **copyjob** on a daily basis, and it sometimes unintentionally
-refused to overwwrite or delete files in the destination folder - in its really
+refused to overwrite or delete files in the destination folder - in its really
 early editions - but it never erroneously lost a file.
 
 
