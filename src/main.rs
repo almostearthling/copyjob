@@ -146,8 +146,13 @@ lazy_static! {
     //  CONFIG-FILE-DIR => where the current config file is located
     static ref DIR_MARKERS: HashMap<&'static str, Vec<&'static str>> = {
         let mut _tmap = HashMap::new();
-        _tmap.insert("USER-HOME", vec![r"~/", r"~\"]);
-        _tmap.insert("CONFIG-FILE-DIR", vec![r"@/", r"@\"]);
+        if cfg!(windows) {
+            _tmap.insert("USER-HOME", vec![r"~/", r"~\"]);
+            _tmap.insert("CONFIG-FILE-DIR", vec![r"@/", r"@\"]);
+        } else {
+            _tmap.insert("USER-HOME", vec![r"~/"]);
+            _tmap.insert("CONFIG-FILE-DIR", vec![r"@/"]);
+        }
         _tmap
     };
 
@@ -480,8 +485,8 @@ fn extract_config(
                         .as_os_str()
                         .to_str()
                         .unwrap()))),
-        verbose: verbose,
-        parsable_output: parsable_output,
+        verbose,
+        parsable_output,
     };
     let mut job_configs: Vec<CopyJobConfig> = Vec::new();
     let mut check_active_jobs: Vec<String> = Vec::new();
@@ -1040,17 +1045,21 @@ fn list_files_matching(
             .unwrap_or(RE_MATCH_NO_FILE.clone());
 
     // excluded directory is not matched as ^$, to also ignore subdirectories
-    // of the excluded directory (this solution is working for now)
-    // TODO: check that no other directories containing the excluded name are
-    //       not excluded as well (may have to be wrapped in path separators?)
+    // of the excluded directory (this solution is working for now); since the
+    // startup directory is already canonicalized we can use specific REs for
+    // path separators on Windows and UNIX
+    let ps = if cfg!(windows) { "\\" } else { "/" };
+    let psre = format!("\\{ps}");
     let excludedir_match = RegexBuilder::new(
-        String::from(format!("{excludedir_pattern}")).as_str())
+        String::from(format!("{psre}{excludedir_pattern}{psre}")).as_str())
             .case_insensitive(!case_sensitive)
             .build()
-            .unwrap_or(RE_MATCH_NO_FILE.clone());
+            .unwrap_or(RE_MATCH_NO_FILE.clone()
+        );
 
     let depth: usize = if recursive { usize::MAX } else { 1 };
     let mut result: Vec<PathBuf> = Vec::new();
+    let search_dir_strlen = search_dir.to_str().unwrap_or("").len() - 1;
 
     for entry in WalkDir::new(&search_dir)
         .max_depth(depth)
@@ -1060,15 +1069,21 @@ fn list_files_matching(
             if !entry.file_type().is_dir() && !(follow_symlinks
                && entry.file_type().is_symlink()) {
                 let mut dir_pathbuf = PathBuf::from(entry.path());
-                let dir_name = if dir_pathbuf.pop() {
-                    dir_pathbuf.to_str()
-                        .unwrap_or("*")
-                        .replace(&search_dir.to_str().unwrap(), "")
+                let subdir_name = if dir_pathbuf.pop() {
+                    let mut res = String::new();
+                    for (idx, c) in dir_pathbuf.to_str()
+                        .unwrap_or("").to_string().chars().enumerate() {
+                        if idx >= search_dir_strlen {
+                            res.push(c);
+                        }
+                    }
+                    res.push_str(ps);
+                    res
                 } else {
                     // a value of '*' as directory reports an error ('reserved' on both Unix&Win)
                     String::from("*")
                 };
-                if dir_name != "*" && !excludedir_match.is_match(&dir_name.as_str()) {
+                if subdir_name != "*" && !excludedir_match.is_match(&subdir_name) {
                     if let Some(file_name) = entry.path().file_name() {
                         if include_match.is_match(&file_name.to_str().unwrap_or(""))
                            && !exclude_match.is_match(&file_name.to_str().unwrap_or("")) {
