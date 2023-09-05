@@ -410,13 +410,8 @@ that such a simple tool could have been suitable for my first Rust project,
 and so it was. It took me *weeks*. I'm still working on a CLI wrapper for
 **copyjob**, this time in Python, to cover logging and console output.
 
-I still find Rust difficult, sometimes "byzantine", but **copyjob** helps me
-to get acquainted with it and I'm slowly getting used to the Rust philosophy.
-And, as a side effect, I keep the folders that I share with my colleagues
-clean and tidy.
-
 Nowadays the core (namely, the resident part) of my legacy utility dubbed
-[When](https://github.com/almostearthling/when-command) has being completely
+[When](https://github.com/almostearthling/when-command) has been completely
 reworked in Rust, as [whenever](https://github.com/almostearthling/whenever):
 in this moment the original project is temporarily quiescent, especially
 because I'm not using Linux as my main desktop operating system now, but also
