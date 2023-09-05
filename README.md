@@ -415,16 +415,17 @@ to get acquainted with it and I'm slowly getting used to the Rust philosophy.
 And, as a side effect, I keep the folders that I share with my colleagues
 clean and tidy.
 
-I'm struggling nowadays to rewrite the core (namely, the resident part)
-of [When](https://github.com/almostearthling/when-command) in Rust: at the
-moment the original project is temporarily quiescent because I'm not using
-Linux as my desktop operating system at this time, and because I found some
-issues in following the continuous changes in the *DBus* messages in the
-versions of Ubuntu Linux that followed the 18.04 release. The plan is to make
-the next version of *When* platform independent (while trying to keep most
-features across platforms), separating the core part from the configuration
-GUI - that will still be written in Python. Then, at least, I will be able to
-use **copyjob** in *When* jobs.
+Nowadays the core (namely, the resident part) of my legacy utility dubbed
+[When](https://github.com/almostearthling/when-command) has being completely
+reworked in Rust, as [whenever](https://github.com/almostearthling/whenever):
+in this moment the original project is temporarily quiescent, especially
+because I'm not using Linux as my main desktop operating system now, but also
+because it is quite difficult to follow the continuous changes in the *DBus*
+messages, services and methods in the versions of Ubuntu that followed the
+18.04 release. The next version of *When* will be platform independent, and
+its core is already working with the same features (more than the ones that
+*When* used to have) on both Windows and Linux. Of course, even with a
+development version, I am already able to use **copyjob** in *whenever* jobs.
 
 There is an entire paragraph in this document, named *Disclaimer*, that
 basically states that anyone should use this small utility at their own risk.
