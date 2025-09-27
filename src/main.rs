@@ -1,15 +1,14 @@
 /// copyjob
 /// An utility to perform complex copy operations based on TOML files
 /// (c) 2023, Francesco Garosi
-
 use std::fs;
-use std::fs::File;
 use std::fs::create_dir_all;
 use std::fs::metadata;
+use std::fs::File;
 
+use std::env;
 use std::io::BufReader;
 use std::io::Read;
-use std::env;
 
 use lazy_static::lazy_static;
 
@@ -21,38 +20,36 @@ use regex::{Regex, RegexBuilder};
 use dirs::home_dir;
 use walkdir::WalkDir;
 
+use cfgmap::{CfgMap, CfgValue, Checkable, Condition::*};
+use data_encoding::HEXLOWER;
+use serde_json::json;
+use sha2::{Digest, Sha256};
 use toml;
 use trash;
-use cfgmap::{CfgValue, CfgMap, Condition::*, Checkable};
-use data_encoding::HEXLOWER;
-use sha2::{Digest, Sha256};
-use serde_json::json;
-
-
 
 // Structures used for a copy job configuration and the global configuration:
 // values provided in CopyJobConfig default to the ones provided globally in
 // the CopyJobGlobalConfig object, and override them if different
 #[derive(Debug)]
 struct CopyJobConfig {
-    job_name: String,               // the job name
-    source_dir: PathBuf,            // source directory
-    destination_dir: PathBuf,       // destination directory
-    include_pattern: String,        // RE pattern of filenames to include
-    exclude_pattern: String,        // RE pattern of filenames to exclude
-    excludedir_pattern: String,     // RE pattern of directories to skip
-    recursive: bool,                // recurse directories
-    case_sensitive: bool,           // consider filenames as case sensitive
-    follow_symlinks: bool,          // follow symlinks
-    overwrite: bool,                // possibly overwrite destination
-    skip_newer: bool,               // do not overwrite more recent files
-    check_content: bool,            // check whether contents are the same
-    remove_others_matching: bool,   // remove matching files not present in source
-    create_directories: bool,       // create non-existing directories
-    keep_structure: bool,           // keep directory structure as in source
-    trash_on_delete: bool,          // use garbage bin instead of deleting
-    trash_on_overwrite: bool,       // send to garbage bin before overwrite
-    halt_on_errors: bool,           // exit job if an error occurs
+    job_name: String,             // the job name
+    source_dir: PathBuf,          // source directory
+    destination_dir: PathBuf,     // destination directory
+    include_pattern: String,      // RE pattern of filenames to include
+    exclude_pattern: String,      // RE pattern of filenames to exclude
+    excludedir_pattern: String,   // RE pattern of directories to skip
+    recursive: bool,              // recurse directories
+    case_sensitive: bool,         // consider filenames as case sensitive
+    follow_symlinks: bool,        // follow symlinks
+    overwrite: bool,              // possibly overwrite destination
+    skip_newer: bool,             // do not overwrite more recent files
+    check_content: bool,          // check whether contents are the same
+    remove_others_matching: bool, // remove matching files not present in source
+    create_directories: bool,     // create non-existing directories
+    keep_structure: bool,         // keep directory structure as in source
+    trash_on_delete: bool,        // use garbage bin instead of deleting
+    trash_on_overwrite: bool,     // send to garbage bin before overwrite
+    halt_on_errors: bool,         // exit job if an error occurs
 }
 
 #[derive(Debug)]
@@ -74,11 +71,10 @@ struct CopyJobGlobalConfig {
     halt_on_errors: bool,               // exit job if an error occurs
 
     // the following parameters are defined through CLI arguments only
-    config_file: PathBuf,               // configuration file path
-    verbose: bool,                      // provide output while running
-    parsable_output: bool,              // provide machine-readable output
+    config_file: PathBuf,  // configuration file path
+    verbose: bool,         // provide output while running
+    parsable_output: bool, // provide machine-readable output
 }
-
 
 // Holds a result for file op to be choosen among the following ones: it
 // does not contain the word Result in the definition as it is not related
@@ -87,7 +83,7 @@ struct CopyJobGlobalConfig {
 #[derive(Debug)]
 enum Outcome {
     Success,
-    Error(u64),     // will report a code from the following list
+    Error(u64), // will report a code from the following list
 }
 
 // Values for Outcome::Error (copy_file, remove_file)
@@ -120,8 +116,6 @@ const ERR_OK: u64 = 0;
 const ERR_GENERIC: u64 = 9999;
 const ERR_INVALID_CONFIG_FILE: u64 = 9998;
 
-
-
 // context identifiers for output
 const CONTEXT_MAIN: &str = "MAIN";
 const CONTEXT_JOB: &str = "JOB";
@@ -135,7 +129,6 @@ const OPERATION_JOB_END: &str = "END_JOB";
 // const OPERATION_MAIN_BEGIN: &str = "BEGIN_MAIN";
 const OPERATION_MAIN_END: &str = "END_MAIN";
 const OPERATION_CONFIG: &str = "CONFIG";
-
 
 // Some constants used within the code
 lazy_static! {
@@ -238,14 +231,10 @@ lazy_static! {
     static ref FMT_VARMENTION_ENV: String = String::from("${*}");
 }
 
-
-
 // helper to convert a list of regexp patterns into a single ORed regexp
 fn combine_regexp_patterns(res: &Vec<String>) -> String {
     format!("({})", String::from(res.join("|")))
 }
-
-
 
 // Helper to calculate hash for a single file
 // see https://stackoverflow.com/a/71606608/5138770
@@ -258,7 +247,9 @@ fn sha256_digest(path: &PathBuf) -> std::io::Result<String> {
         let mut buffer = [0; 4096];
         loop {
             let count = reader.read(&mut buffer)?;
-            if count == 0 { break }
+            if count == 0 {
+                break;
+            }
             hasher.update(&buffer[..count]);
         }
         hasher.finalize()
@@ -266,22 +257,22 @@ fn sha256_digest(path: &PathBuf) -> std::io::Result<String> {
     Ok(HEXLOWER.encode(digest.as_ref()))
 }
 
-
-
 // Helpers to simply convert an error code to text
 fn format_err_parsable(code: u64) -> String {
     if ERRS_PARSABLE.contains_key(&code) {
         String::from(ERRS_PARSABLE[&code])
-    } else { String::from(ERRS_PARSABLE[&ERR_GENERIC]) }
+    } else {
+        String::from(ERRS_PARSABLE[&ERR_GENERIC])
+    }
 }
 
 fn format_err_verbose(code: u64) -> String {
     if ERRS_VERBOSE.contains_key(&code) {
         String::from(ERRS_VERBOSE[&code])
-    } else { String::from(ERRS_VERBOSE[&ERR_GENERIC]) }
+    } else {
+        String::from(ERRS_VERBOSE[&ERR_GENERIC])
+    }
 }
-
-
 
 // helper to format a parsable output line consistently
 fn format_output_parsable(
@@ -334,10 +325,9 @@ fn format_output_parsable(
         "result": [code, mresult],
         "operation": [operation, mname],
         "args": [marg1, marg2]
-    }).to_string()
+    })
+    .to_string()
 }
-
-
 
 /// Extract the configuration from a TOML file, given the file name and the
 /// pertaining arguments as resulting from the command line. A description of
@@ -359,14 +349,18 @@ fn extract_config(
     verbose: bool,
     parsable_output: bool,
 ) -> std::io::Result<(CopyJobGlobalConfig, Vec<CopyJobConfig>)> {
-
     // local helpers:
 
     // l1. create a specific error
     fn _ec_error_invalid_config(key: &str) -> std::io::Error {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput,
-            String::from(format!("{}:{key}", format_err_parsable(ERR_INVALID_CONFIG_FILE)))
-            .as_str())
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            String::from(format!(
+                "{}:{key}",
+                format_err_parsable(ERR_INVALID_CONFIG_FILE)
+            ))
+            .as_str(),
+        )
     }
 
     // l2. handle environment and local variables
@@ -408,18 +402,15 @@ fn extract_config(
                 if result.starts_with(*marker) {
                     match *mkey {
                         "USER-HOME" => {
-                            result = String::from(&user_home
-                                .clone()
-                                .to_string_lossy()
-                                .to_string()) + &result[1..]; // to preserve the slash
+                            result = String::from(&user_home.clone().to_string_lossy().to_string())
+                                + &result[1..]; // to preserve the slash
                         }
                         "CONFIG-FILE-DIR" => {
-                            result = String::from(&config_file_dir
-                                .clone()
-                                .to_string_lossy()
-                                .to_string()) + &result[1..]; // to preserve the slash
+                            result = String::from(
+                                &config_file_dir.clone().to_string_lossy().to_string(),
+                            ) + &result[1..]; // to preserve the slash
                         }
-                        _ => { }
+                        _ => {}
                     }
                 }
             }
@@ -431,12 +422,12 @@ fn extract_config(
     fn _ec_normalize_path_slashes(path: &str) -> String {
         if cfg!(windows) {
             Regex::new("\\[\\]+")
-                .unwrap()   // cannot panic for we know the RE is correct
+                .unwrap() // cannot panic for we know the RE is correct
                 .replace_all(&path.replace("/", "\\"), "\\")
                 .to_string()
         } else {
             Regex::new("/[/]+")
-                .unwrap()   // cannot panic for we know the RE is correct
+                .unwrap() // cannot panic for we know the RE is correct
                 .replace_all(&path.replace("\\", "/"), "/")
                 .to_string()
         }
@@ -478,19 +469,15 @@ fn extract_config(
         halt_on_errors: false,
 
         // the following parameters are defined through CLI arguments only
-        config_file: PathBuf::from(
-            _ec_normalize_path_slashes(
-                &String::from(
-                    config_file
-                        .as_os_str()
-                        .to_str()
-                        .unwrap()))),
+        config_file: PathBuf::from(_ec_normalize_path_slashes(&String::from(
+            config_file.as_os_str().to_str().unwrap(),
+        ))),
         verbose,
         parsable_output,
     };
     let mut job_configs: Vec<CopyJobConfig> = Vec::new();
     let mut check_active_jobs: Vec<String> = Vec::new();
-    let allowed_globals: Vec<String> = vec!(
+    let allowed_globals: Vec<String> = vec![
         String::from("active_jobs"),
         String::from("variables"),
         String::from("recursive"),
@@ -506,9 +493,9 @@ fn extract_config(
         String::from("trash_on_overwrite"),
         String::from("halt_on_errors"),
         String::from("job"),
-    );
+    ];
 
-    let config_map: CfgMap;     // to be initialized below
+    let config_map: CfgMap; // to be initialized below
 
     match toml::from_str(&fs::read_to_string(config_file)?.as_str()) {
         Ok(toml_text) => {
@@ -517,7 +504,7 @@ fn extract_config(
         _ => {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format_err_parsable(ERR_INVALID_CONFIG_FILE)
+                format_err_parsable(ERR_INVALID_CONFIG_FILE),
             ));
         }
     }
@@ -547,20 +534,22 @@ fn extract_config(
     let cur_key = "active_jobs";
     let cur_item = config_map.get(&cur_key);
     if !cur_item.check_that(IsList) {
-        return Err(_ec_error_invalid_config(&cur_key));
+        return Err(_ec_error_invalid_config(cur_key));
     } else {
         match cur_item {
             Some(c) => {
                 for item in c.as_list().unwrap() {
                     if !item.is_str() {
-                        return Err(_ec_error_invalid_config(&cur_key));
+                        return Err(_ec_error_invalid_config(cur_key));
                     }
-                    global_config.active_jobs.push(String::from(item.as_str().unwrap()));
+                    global_config
+                        .active_jobs
+                        .push(String::from(item.as_str().unwrap()));
                     check_active_jobs.push(String::from(item.as_str().unwrap()));
                 }
             }
             None => {
-                return Err(_ec_error_invalid_config(&cur_key));
+                return Err(_ec_error_invalid_config(cur_key));
             }
         }
     }
@@ -570,17 +559,18 @@ fn extract_config(
     if config_map.contains_key(cur_key) {
         let cur_item = config_map.get(&cur_key);
         if !cur_item.check_that(IsMap) {
-            return Err(_ec_error_invalid_config(&cur_key));
+            return Err(_ec_error_invalid_config(cur_key));
         } else {
             match cur_item {
                 Some(c) => {
                     for (key, item) in c.as_map().unwrap().iter() {
                         if !item.is_str() {
-                            return Err(_ec_error_invalid_config(&cur_key));
+                            return Err(_ec_error_invalid_config(cur_key));
                         }
                         global_config.variables.insert(
                             String::from(key.as_str()),
-                            String::from(item.as_str().unwrap()));
+                            String::from(item.as_str().unwrap()),
+                        );
                     }
                 }
                 None => { /* OK to go, default already set */ }
@@ -594,7 +584,7 @@ fn extract_config(
     match cur_item {
         Some(item) => {
             if !item.is_bool() {
-                return Err(_ec_error_invalid_config(&cur_key));
+                return Err(_ec_error_invalid_config(cur_key));
             }
             global_config.recursive = *item.as_bool().unwrap();
         }
@@ -607,7 +597,7 @@ fn extract_config(
     match cur_item {
         Some(item) => {
             if !item.is_bool() {
-                return Err(_ec_error_invalid_config(&cur_key));
+                return Err(_ec_error_invalid_config(cur_key));
             }
             global_config.case_sensitive = *item.as_bool().unwrap();
         }
@@ -620,7 +610,7 @@ fn extract_config(
     match cur_item {
         Some(item) => {
             if !item.is_bool() {
-                return Err(_ec_error_invalid_config(&cur_key));
+                return Err(_ec_error_invalid_config(cur_key));
             }
             global_config.follow_symlinks = *item.as_bool().unwrap();
         }
@@ -633,7 +623,7 @@ fn extract_config(
     match cur_item {
         Some(item) => {
             if !item.is_bool() {
-                return Err(_ec_error_invalid_config(&cur_key));
+                return Err(_ec_error_invalid_config(cur_key));
             }
             global_config.overwrite = *item.as_bool().unwrap();
         }
@@ -646,10 +636,9 @@ fn extract_config(
     match cur_item {
         Some(item) => {
             if !item.is_bool() {
-                return Err(_ec_error_invalid_config(&cur_key));
+                return Err(_ec_error_invalid_config(cur_key));
             }
             global_config.skip_newer = *item.as_bool().unwrap();
-
         }
         None => { /* OK to go, default already set */ }
     }
@@ -660,7 +649,7 @@ fn extract_config(
     match cur_item {
         Some(item) => {
             if !item.is_bool() {
-                return Err(_ec_error_invalid_config(&cur_key));
+                return Err(_ec_error_invalid_config(cur_key));
             }
             global_config.check_content = *item.as_bool().unwrap();
         }
@@ -673,7 +662,7 @@ fn extract_config(
     match cur_item {
         Some(item) => {
             if !item.is_bool() {
-                return Err(_ec_error_invalid_config(&cur_key));
+                return Err(_ec_error_invalid_config(cur_key));
             }
             global_config.remove_others_matching = *item.as_bool().unwrap();
         }
@@ -686,7 +675,7 @@ fn extract_config(
     match cur_item {
         Some(item) => {
             if !item.is_bool() {
-                return Err(_ec_error_invalid_config(&cur_key));
+                return Err(_ec_error_invalid_config(cur_key));
             }
             global_config.create_directories = *item.as_bool().unwrap();
         }
@@ -699,7 +688,7 @@ fn extract_config(
     match cur_item {
         Some(item) => {
             if !item.is_bool() {
-                return Err(_ec_error_invalid_config(&cur_key));
+                return Err(_ec_error_invalid_config(cur_key));
             }
             global_config.keep_structure = *item.as_bool().unwrap();
         }
@@ -712,7 +701,7 @@ fn extract_config(
     match cur_item {
         Some(item) => {
             if !item.is_bool() {
-                return Err(_ec_error_invalid_config(&cur_key));
+                return Err(_ec_error_invalid_config(cur_key));
             }
             global_config.trash_on_delete = *item.as_bool().unwrap();
         }
@@ -725,7 +714,7 @@ fn extract_config(
     match cur_item {
         Some(item) => {
             if !item.is_bool() {
-                return Err(_ec_error_invalid_config(&cur_key));
+                return Err(_ec_error_invalid_config(cur_key));
             }
             global_config.trash_on_overwrite = *item.as_bool().unwrap();
         }
@@ -738,7 +727,7 @@ fn extract_config(
     match cur_item {
         Some(item) => {
             if !item.is_bool() {
-                return Err(_ec_error_invalid_config(&cur_key));
+                return Err(_ec_error_invalid_config(cur_key));
             }
             global_config.halt_on_errors = *item.as_bool().unwrap();
         }
@@ -756,11 +745,11 @@ fn extract_config(
     match cur_item {
         Some(c) => {
             if !c.is_list() {
-                return Err(_ec_error_invalid_config(&cur_key));
+                return Err(_ec_error_invalid_config(cur_key));
             }
             for elem in c.as_list().unwrap_or(&Vec::<CfgValue>::new()).into_iter() {
                 if !elem.is_map() {
-                    return Err(_ec_error_invalid_config(&cur_key));
+                    return Err(_ec_error_invalid_config(cur_key));
                 } else {
                     let mut job = CopyJobConfig {
                         job_name: String::new(),
@@ -793,17 +782,17 @@ fn extract_config(
                             "name" => {
                                 let cur_key = "job/name";
                                 if !item.is_str() {
-                                    return Err(_ec_error_invalid_config(&cur_key));
+                                    return Err(_ec_error_invalid_config(cur_key));
                                 }
                                 job.job_name = String::from(item.as_str().unwrap());
                                 if !RE_JOBNAME.is_match(&job.job_name) {
-                                    return Err(_ec_error_invalid_config(&cur_key));
+                                    return Err(_ec_error_invalid_config(cur_key));
                                 }
                             }
                             "source" => {
                                 let cur_key = "job/source";
                                 if !item.is_str() {
-                                    return Err(_ec_error_invalid_config(&cur_key));
+                                    return Err(_ec_error_invalid_config(cur_key));
                                 }
                                 let mut s = String::from(item.as_str().unwrap());
                                 s = _ec_replace_variables_in_string(
@@ -821,15 +810,16 @@ fn extract_config(
                                 s = _ec_replace_markers_in_string(
                                     &s,
                                     &var_user_home,
-                                    &var_config_file_dir
+                                    &var_config_file_dir,
                                 );
-                                job.source_dir = PathBuf::from(
-                                    _ec_add_trailing_slashes(&_ec_normalize_path_slashes(&s)));
+                                job.source_dir = PathBuf::from(_ec_add_trailing_slashes(
+                                    &_ec_normalize_path_slashes(&s),
+                                ));
                             }
                             "destination" => {
                                 let cur_key = "job/destination";
                                 if !item.is_str() {
-                                    return Err(_ec_error_invalid_config(&cur_key));
+                                    return Err(_ec_error_invalid_config(cur_key));
                                 }
                                 let mut s = String::from(item.as_str().unwrap());
                                 s = _ec_replace_variables_in_string(
@@ -847,20 +837,23 @@ fn extract_config(
                                 s = _ec_replace_markers_in_string(
                                     &s,
                                     &var_user_home,
-                                    &var_config_file_dir
+                                    &var_config_file_dir,
                                 );
-                                job.destination_dir = PathBuf::from(
-                                    _ec_add_trailing_slashes(&_ec_normalize_path_slashes(&s)));
+                                job.destination_dir = PathBuf::from(_ec_add_trailing_slashes(
+                                    &_ec_normalize_path_slashes(&s),
+                                ));
                             }
                             "patterns_include" => {
                                 let cur_key = "job/patterns_include";
                                 if !item.is_list() {
-                                    return Err(_ec_error_invalid_config(&cur_key));
+                                    return Err(_ec_error_invalid_config(cur_key));
                                 }
                                 let mut li: Vec<String> = Vec::new();
                                 for i in item.as_list().unwrap() {
                                     if let Some(s) = i.as_str() {
-                                        if s.len() > 0 { li.push(String::from(s)); }
+                                        if s.len() > 0 {
+                                            li.push(String::from(s));
+                                        }
                                     }
                                 }
                                 job.include_pattern = combine_regexp_patterns(&li);
@@ -868,12 +861,14 @@ fn extract_config(
                             "patterns_exclude" => {
                                 let cur_key = "job/patterns_exclude";
                                 if !item.is_list() {
-                                    return Err(_ec_error_invalid_config(&cur_key));
+                                    return Err(_ec_error_invalid_config(cur_key));
                                 }
                                 let mut li: Vec<String> = Vec::new();
                                 for i in item.as_list().unwrap() {
                                     if let Some(s) = i.as_str() {
-                                        if s.len() > 0 { li.push(String::from(s)); }
+                                        if s.len() > 0 {
+                                            li.push(String::from(s));
+                                        }
                                     }
                                 }
                                 job.exclude_pattern = combine_regexp_patterns(&li);
@@ -881,12 +876,14 @@ fn extract_config(
                             "patterns_exclude_dir" => {
                                 let cur_key = "job/patterns_exclude_dir";
                                 if !item.is_list() {
-                                    return Err(_ec_error_invalid_config(&cur_key));
+                                    return Err(_ec_error_invalid_config(cur_key));
                                 }
                                 let mut li: Vec<String> = Vec::new();
                                 for i in item.as_list().unwrap() {
                                     if let Some(s) = i.as_str() {
-                                        if s.len() > 0 { li.push(String::from(s)); }
+                                        if s.len() > 0 {
+                                            li.push(String::from(s));
+                                        }
                                     }
                                 }
                                 job.excludedir_pattern = combine_regexp_patterns(&li);
@@ -894,94 +891,94 @@ fn extract_config(
                             "recursive" => {
                                 let cur_key = "job/recursive";
                                 if !item.is_bool() {
-                                    return Err(_ec_error_invalid_config(&cur_key));
+                                    return Err(_ec_error_invalid_config(cur_key));
                                 }
                                 job.recursive = *item.as_bool().unwrap();
                             }
                             "case_sensitive" => {
                                 let cur_key = "job/case_sensitive";
                                 if !item.is_bool() {
-                                    return Err(_ec_error_invalid_config(&cur_key));
+                                    return Err(_ec_error_invalid_config(cur_key));
                                 }
                                 job.case_sensitive = *item.as_bool().unwrap();
                             }
                             "follow_symlinks" => {
                                 let cur_key = "job/follow_symlinks";
                                 if !item.is_bool() {
-                                    return Err(_ec_error_invalid_config(&cur_key));
+                                    return Err(_ec_error_invalid_config(cur_key));
                                 }
                                 job.follow_symlinks = *item.as_bool().unwrap();
                             }
                             "overwrite" => {
                                 let cur_key = "job/overwrite";
                                 if !item.is_bool() {
-                                    return Err(_ec_error_invalid_config(&cur_key));
+                                    return Err(_ec_error_invalid_config(cur_key));
                                 }
                                 job.overwrite = *item.as_bool().unwrap();
                             }
                             "skip_newer" => {
                                 let cur_key = "job/skip_newer";
                                 if !item.is_bool() {
-                                    return Err(_ec_error_invalid_config(&cur_key));
+                                    return Err(_ec_error_invalid_config(cur_key));
                                 }
                                 job.skip_newer = *item.as_bool().unwrap();
                             }
                             "check_content" => {
                                 let cur_key = "job/check_content";
                                 if !item.is_bool() {
-                                    return Err(_ec_error_invalid_config(&cur_key));
+                                    return Err(_ec_error_invalid_config(cur_key));
                                 }
                                 job.check_content = *item.as_bool().unwrap();
                             }
                             "remove_others_matching" => {
                                 let cur_key = "job/remove_others_matching";
                                 if !item.is_bool() {
-                                    return Err(_ec_error_invalid_config(&cur_key));
+                                    return Err(_ec_error_invalid_config(cur_key));
                                 }
                                 job.remove_others_matching = *item.as_bool().unwrap();
                             }
                             "create_directories" => {
                                 let cur_key = "job/create_directories";
                                 if !item.is_bool() {
-                                    return Err(_ec_error_invalid_config(&cur_key));
+                                    return Err(_ec_error_invalid_config(cur_key));
                                 }
                                 job.create_directories = *item.as_bool().unwrap();
                             }
                             "keep_structure" => {
                                 let cur_key = "job/keep_structure";
                                 if !item.is_bool() {
-                                    return Err(_ec_error_invalid_config(&cur_key));
+                                    return Err(_ec_error_invalid_config(cur_key));
                                 }
                                 job.keep_structure = *item.as_bool().unwrap();
                             }
                             "trash_on_delete" => {
                                 let cur_key = "job/halt_on_errors";
                                 if !item.is_bool() {
-                                    return Err(_ec_error_invalid_config(&cur_key));
+                                    return Err(_ec_error_invalid_config(cur_key));
                                 }
                                 job.trash_on_delete = *item.as_bool().unwrap();
                             }
                             "trash_on_overwrite" => {
                                 let cur_key = "job/halt_on_errors";
                                 if !item.is_bool() {
-                                    return Err(_ec_error_invalid_config(&cur_key));
+                                    return Err(_ec_error_invalid_config(cur_key));
                                 }
                                 job.trash_on_overwrite = *item.as_bool().unwrap();
                             }
                             "halt_on_errors" => {
                                 let cur_key = "job/halt_on_errors";
                                 if !item.is_bool() {
-                                    return Err(_ec_error_invalid_config(&cur_key));
+                                    return Err(_ec_error_invalid_config(cur_key));
                                 }
                                 job.halt_on_errors = *item.as_bool().unwrap();
                             }
                             _ => {
-                                return Err(_ec_error_invalid_config(&cur_key));
+                                return Err(_ec_error_invalid_config(cur_key));
                             }
                         }
                     }
                     if job.job_name.len() == 0 {
-                        return Err(_ec_error_invalid_config(&cur_key));
+                        return Err(_ec_error_invalid_config(cur_key));
                     }
                     global_config.job_list.push(String::from(&job.job_name));
                     job_configs.push(job);
@@ -995,15 +992,13 @@ fn extract_config(
     let cur_key = "active_jobs";
     for item in Vec::from(check_active_jobs) {
         if !global_config.job_list.contains(&item) {
-            return Err(_ec_error_invalid_config(&cur_key));
+            return Err(_ec_error_invalid_config(cur_key));
         }
     }
 
     // now the configuration is complete (unless this function panicked)
     Ok((global_config, job_configs))
 }
-
-
 
 /// Build a list of files in a directory matching/unmatching a pattern by
 /// either listing the files in that directory or traversing it recursively.
@@ -1033,16 +1028,14 @@ fn list_files_matching(
 ) -> Option<Vec<PathBuf>> {
     // FIXME: for now erratic patterns only cause a no-match (acceptable?)
     //        in the release version they should actually return None
-    let include_match = RegexBuilder::new(
-        String::from(format!("^{include_pattern}$")).as_str())
-            .case_insensitive(!case_sensitive)
-            .build()
-            .unwrap_or(RE_MATCH_NO_FILE.clone());
-    let exclude_match = RegexBuilder::new(
-        String::from(format!("^{exclude_pattern}$")).as_str())
-            .case_insensitive(!case_sensitive)
-            .build()
-            .unwrap_or(RE_MATCH_NO_FILE.clone());
+    let include_match = RegexBuilder::new(String::from(format!("^{include_pattern}$")).as_str())
+        .case_insensitive(!case_sensitive)
+        .build()
+        .unwrap_or(RE_MATCH_NO_FILE.clone());
+    let exclude_match = RegexBuilder::new(String::from(format!("^{exclude_pattern}$")).as_str())
+        .case_insensitive(!case_sensitive)
+        .build()
+        .unwrap_or(RE_MATCH_NO_FILE.clone());
 
     // excluded directory is not matched as ^$, to also ignore subdirectories
     // of the excluded directory (this solution is working for now); since the
@@ -1050,12 +1043,11 @@ fn list_files_matching(
     // path separators on Windows and UNIX
     let ps = if cfg!(windows) { "\\" } else { "/" };
     let psre = format!("\\{ps}");
-    let excludedir_match = RegexBuilder::new(
-        String::from(format!("{psre}{excludedir_pattern}{psre}")).as_str())
+    let excludedir_match =
+        RegexBuilder::new(String::from(format!("{psre}{excludedir_pattern}{psre}")).as_str())
             .case_insensitive(!case_sensitive)
             .build()
-            .unwrap_or(RE_MATCH_NO_FILE.clone()
-        );
+            .unwrap_or(RE_MATCH_NO_FILE.clone());
 
     let depth: usize = if recursive { usize::MAX } else { 1 };
     let mut result: Vec<PathBuf> = Vec::new();
@@ -1065,38 +1057,43 @@ fn list_files_matching(
         .max_depth(depth)
         .follow_links(follow_symlinks)
         .into_iter()
-        .filter_map(|e| e.ok()) {    // skip errors
-            if !entry.file_type().is_dir() && !(follow_symlinks
-               && entry.file_type().is_symlink()) {
-                let mut dir_pathbuf = PathBuf::from(entry.path());
-                let subdir_name = if dir_pathbuf.pop() {
-                    let mut res = String::new();
-                    for (idx, c) in dir_pathbuf.to_str()
-                        .unwrap_or("").to_string().chars().enumerate() {
-                        if idx >= search_dir_strlen {
-                            res.push(c);
-                        }
+        .filter_map(|e| e.ok())
+    {
+        // skip errors
+        if !entry.file_type().is_dir() && !(follow_symlinks && entry.file_type().is_symlink()) {
+            let mut dir_pathbuf = PathBuf::from(entry.path());
+            let subdir_name = if dir_pathbuf.pop() {
+                let mut res = String::new();
+                for (idx, c) in dir_pathbuf
+                    .to_str()
+                    .unwrap_or("")
+                    .to_string()
+                    .chars()
+                    .enumerate()
+                {
+                    if idx >= search_dir_strlen {
+                        res.push(c);
                     }
-                    res.push_str(ps);
-                    res
-                } else {
-                    // a value of '*' as directory reports an error ('reserved' on both Unix&Win)
-                    String::from("*")
-                };
-                if subdir_name != "*" && !excludedir_match.is_match(&subdir_name) {
-                    if let Some(file_name) = entry.path().file_name() {
-                        if include_match.is_match(&file_name.to_str().unwrap_or(""))
-                           && !exclude_match.is_match(&file_name.to_str().unwrap_or("")) {
-                            result.push(PathBuf::from(entry.path()));
-                        }
+                }
+                res.push_str(ps);
+                res
+            } else {
+                // a value of '*' as directory reports an error ('reserved' on both Unix&Win)
+                String::from("*")
+            };
+            if subdir_name != "*" && !excludedir_match.is_match(&subdir_name) {
+                if let Some(file_name) = entry.path().file_name() {
+                    if include_match.is_match(&file_name.to_str().unwrap_or(""))
+                        && !exclude_match.is_match(&file_name.to_str().unwrap_or(""))
+                    {
+                        result.push(PathBuf::from(entry.path()));
                     }
                 }
             }
         }
+    }
     Some(result)
 }
-
-
 
 /// Attempt to copy a single file to a destination (provided as a path):
 /// source and destination are full or relative to current FS position,
@@ -1116,7 +1113,7 @@ fn list_files_matching(
 ///     create_directories: create directory if it does not exist yet
 ///     trash_on_overwrite: to send to garbage bin instead of overwriting
 
-fn copy_file (
+fn copy_file(
     source: &PathBuf,
     destination: &PathBuf,
     overwrite: bool,
@@ -1127,13 +1124,15 @@ fn copy_file (
     trash_on_overwrite: bool,
 ) -> Outcome {
     // normalize paths
-    let source_path = PathBuf::from(
-        &source.canonicalize().unwrap_or(PathBuf::new()));
+    let source_path = PathBuf::from(&source.canonicalize().unwrap_or(PathBuf::new()));
     let destination_path = PathBuf::from(
-        &destination.canonicalize().unwrap_or(PathBuf::from(&destination)));
-        // NOTE: https://doc.rust-lang.org/nightly/std/fs/fn.canonicalize.html#errors
-        //       `canonicalize` returns an error if the target does not exist, thus
-        //       we either get the canonicalied path or the original path.
+        &destination
+            .canonicalize()
+            .unwrap_or(PathBuf::from(&destination)),
+    );
+    // NOTE: https://doc.rust-lang.org/nightly/std/fs/fn.canonicalize.html#errors
+    //       `canonicalize` returns an error if the target does not exist, thus
+    //       we either get the canonicalied path or the original path.
 
     // a flag that keeps track of whether we are overwriting or not
     let mut overwriting = false;
@@ -1148,7 +1147,8 @@ fn copy_file (
             if s_stat.is_dir() {
                 return Outcome::Error(FOERR_SOURCE_IS_DIR);
             }
-            if s_stat.is_symlink() && !follow_symlinks {   // TODO: is it expected?
+            if s_stat.is_symlink() && !follow_symlinks {
+                // TODO: is it expected?
                 return Outcome::Error(FOERR_SOURCE_IS_SYMLINK);
             }
             match metadata(&destination_path) {
@@ -1165,20 +1165,16 @@ fn copy_file (
                     }
                     if skip_newer {
                         match s_stat.modified() {
-                            Ok(s_mtime) => {
-                                match d_stat.modified() {
-                                    Ok(d_mtime) => {
-                                        if s_mtime <= d_mtime {
-                                            return Outcome::Error(
-                                                FOERR_DESTINATION_IS_NEWER);
-                                        }
-                                    }
-                                    Err(_) => {
-                                        return Outcome::Error(
-                                            FOERR_DESTINATION_NOT_ACCESSIBLE);
+                            Ok(s_mtime) => match d_stat.modified() {
+                                Ok(d_mtime) => {
+                                    if s_mtime <= d_mtime {
+                                        return Outcome::Error(FOERR_DESTINATION_IS_NEWER);
                                     }
                                 }
-                            }
+                                Err(_) => {
+                                    return Outcome::Error(FOERR_DESTINATION_NOT_ACCESSIBLE);
+                                }
+                            },
                             // should never be reached
                             Err(_) => {
                                 return Outcome::Error(FOERR_SOURCE_NOT_ACCESSIBLE);
@@ -1189,20 +1185,16 @@ fn copy_file (
                     // and skip copy if the contents are the same
                     if check_content {
                         match sha256_digest(&source_path) {
-                            Ok(source_hash) => {
-                                match sha256_digest(&destination_path) {
-                                    Ok(destination_hash) => {
-                                        if destination_hash == source_hash {
-                                            return Outcome::Error(
-                                                FOERR_DESTINATION_IS_IDENTICAL);
-                                        }
-                                    }
-                                    Err(_) => {
-                                        return Outcome::Error(
-                                            FOERR_DESTINATION_NOT_ACCESSIBLE);
+                            Ok(source_hash) => match sha256_digest(&destination_path) {
+                                Ok(destination_hash) => {
+                                    if destination_hash == source_hash {
+                                        return Outcome::Error(FOERR_DESTINATION_IS_IDENTICAL);
                                     }
                                 }
-                            }
+                                Err(_) => {
+                                    return Outcome::Error(FOERR_DESTINATION_NOT_ACCESSIBLE);
+                                }
+                            },
                             Err(_) => {
                                 return Outcome::Error(FOERR_SOURCE_NOT_ACCESSIBLE);
                             }
@@ -1257,7 +1249,7 @@ fn copy_file (
                 Ok(_) => {
                     // FileOpOutcome::Success is returned only here, after an
                     // actually successful copy operation
-                    return Outcome::Success
+                    return Outcome::Success;
                 }
                 Err(res_err) => {
                     if res_err.kind() == std::io::ErrorKind::PermissionDenied {
@@ -1273,8 +1265,6 @@ fn copy_file (
     }
 }
 
-
-
 /// Attempt to remove a specified file if it exists and if allowed to. A
 /// full description of the required parameters follows:
 ///
@@ -1282,14 +1272,9 @@ fn copy_file (
 ///     follow_symlinks: follow symbolic links
 ///     trash_on_delete: to send to garbage bin instead of deleting
 
-fn remove_file (
-    destination: &PathBuf,
-    follow_symlinks: bool,
-    trash_on_delete: bool,
-) -> Outcome {
+fn remove_file(destination: &PathBuf, follow_symlinks: bool, trash_on_delete: bool) -> Outcome {
     // normalize paths
-    let destination_path = PathBuf::from(
-        &destination.canonicalize().unwrap_or(PathBuf::new()));
+    let destination_path = PathBuf::from(&destination.canonicalize().unwrap_or(PathBuf::new()));
 
     match metadata(&destination_path) {
         Ok(d_stat) => {
@@ -1323,8 +1308,6 @@ fn remove_file (
     }
 }
 
-
-
 /// Perform a single copy job, by building a list of files to copy and by
 /// copying them if possible using `copyfile` seen above. To be noticed that:
 ///
@@ -1345,12 +1328,7 @@ fn remove_file (
 /// As internal functions it also includes simple formatters for writing
 /// suitable messages when needed.
 
-fn run_single_job(
-    job: &CopyJobConfig,
-    verbose: bool,
-    parsable_output: bool,
-) -> Outcome {
-
+fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> Outcome {
     // local helpers:
 
     // l1. format a message (both machine readable and verbose output)
@@ -1363,27 +1341,41 @@ fn run_single_job(
         destination: &PathBuf,
     ) -> String {
         if parsable_output {
-            format_output_parsable(CONTEXT_JOB, job, code, operation,
+            format_output_parsable(
+                CONTEXT_JOB,
+                job,
+                code,
+                operation,
                 &source.to_str().unwrap_or("<unknown>"),
-                &destination.to_str().unwrap_or("<unknown>"))
+                &destination.to_str().unwrap_or("<unknown>"),
+            )
         } else {
             match operation {
                 OPERATION_JOB_COPY => {
                     if code == 0 {
-                        format!("copied in job {job}: {} => {}",
-                            source.display(), destination.display())
+                        format!(
+                            "copied in job {job}: {} => {}",
+                            source.display(),
+                            destination.display()
+                        )
                     } else {
-                        format!("error in job {job}: '{}' while copying {} => {}",
-                            format_err_verbose(code), source.display(),
-                            destination.display())
+                        format!(
+                            "error in job {job}: '{}' while copying {} => {}",
+                            format_err_verbose(code),
+                            source.display(),
+                            destination.display()
+                        )
                     }
                 }
                 OPERATION_JOB_DEL => {
                     if code == 0 {
                         format!("removed in job {job}: {}", destination.display())
                     } else {
-                        format!("error in job {job}: '{}' while removing {}",
-                            format_err_verbose(code), destination.display())
+                        format!(
+                            "error in job {job}: '{}' while removing {}",
+                            format_err_verbose(code),
+                            destination.display()
+                        )
                     }
                 }
                 op => {
@@ -1403,7 +1395,11 @@ fn run_single_job(
         num_delete: usize,
     ) -> String {
         if parsable_output {
-            format_output_parsable(CONTEXT_JOB, job, code, operation,
+            format_output_parsable(
+                CONTEXT_JOB,
+                job,
+                code,
+                operation,
                 &format!("{num_copy}"),
                 &format!("{num_delete}"),
             )
@@ -1411,7 +1407,8 @@ fn run_single_job(
             match operation {
                 OPERATION_JOB_BEGIN => {
                     if code == 0 {
-                        format!("\
+                        format!(
+                            "\
                             operations in job {job}: {num_copy} file(s) to copy, \
                             {num_delete} to possibly remove on destination"
                         )
@@ -1421,7 +1418,8 @@ fn run_single_job(
                 }
                 OPERATION_JOB_END => {
                     if code == 0 {
-                        format!("\
+                        format!(
+                            "\
                             results for job {job}: {num_copy} file(s) copied, \
                             {num_delete} removed on destination"
                         )
@@ -1437,32 +1435,37 @@ fn run_single_job(
     }
 
     // source and destination must exist and be canonicalizeable
-    let source_directory = PathBuf::from(
-        &job.source_dir.canonicalize().unwrap_or(PathBuf::new()));
+    let source_directory = PathBuf::from(&job.source_dir.canonicalize().unwrap_or(PathBuf::new()));
     if !source_directory.exists() {
         if verbose {
-            eprintln!("{}", _format_jobinfo_rsj(
-                parsable_output,
-                &job.job_name,
-                OPERATION_JOB_BEGIN,
-                CJERR_DESTINATION_DIR_NOT_EXISTS,
-                0,
-                0,
-            ));
-        }
-        return Outcome::Error(CJERR_SOURCE_DIR_NOT_EXISTS);
-    }
-    if !job.destination_dir.exists() {
-        if !job.create_directories {
-            if verbose {
-                eprintln!("{}", _format_jobinfo_rsj(
+            eprintln!(
+                "{}",
+                _format_jobinfo_rsj(
                     parsable_output,
                     &job.job_name,
                     OPERATION_JOB_BEGIN,
                     CJERR_DESTINATION_DIR_NOT_EXISTS,
                     0,
                     0,
-                ));
+                )
+            );
+        }
+        return Outcome::Error(CJERR_SOURCE_DIR_NOT_EXISTS);
+    }
+    if !job.destination_dir.exists() {
+        if !job.create_directories {
+            if verbose {
+                eprintln!(
+                    "{}",
+                    _format_jobinfo_rsj(
+                        parsable_output,
+                        &job.job_name,
+                        OPERATION_JOB_BEGIN,
+                        CJERR_DESTINATION_DIR_NOT_EXISTS,
+                        0,
+                        0,
+                    )
+                );
             }
             return Outcome::Error(CJERR_DESTINATION_DIR_NOT_EXISTS);
         }
@@ -1476,178 +1479,203 @@ fn run_single_job(
         &job.excludedir_pattern,
         job.recursive,
         job.follow_symlinks,
-        job.case_sensitive) {
-            Some(files_to_copy) => {
-                let mut num_files_copied: usize = 0;
-                let mut num_files_deleted: usize = 0;
-                let mut files_to_delete = if job.remove_others_matching {
-                    list_files_matching(
-                        &job.destination_dir,
-                        &job.include_pattern,
-                        &job.exclude_pattern,
-                        &job.excludedir_pattern,
-                        job.recursive,
-                        job.follow_symlinks,
-                        job.case_sensitive,
-                    ).unwrap_or(Vec::new())
-                } else { Vec::new() };
-                if verbose {
-                    println!("{}", _format_jobinfo_rsj(
+        job.case_sensitive,
+    ) {
+        Some(files_to_copy) => {
+            let mut num_files_copied: usize = 0;
+            let mut num_files_deleted: usize = 0;
+            let mut files_to_delete = if job.remove_others_matching {
+                list_files_matching(
+                    &job.destination_dir,
+                    &job.include_pattern,
+                    &job.exclude_pattern,
+                    &job.excludedir_pattern,
+                    job.recursive,
+                    job.follow_symlinks,
+                    job.case_sensitive,
+                )
+                .unwrap_or(Vec::new())
+            } else {
+                Vec::new()
+            };
+            if verbose {
+                println!(
+                    "{}",
+                    _format_jobinfo_rsj(
                         parsable_output,
                         &job.job_name,
                         OPERATION_JOB_BEGIN,
                         ERR_OK,
                         files_to_copy.len(),
                         files_to_delete.len(),
-                    ));
-                }
-                for item in files_to_copy {
-                    // here we also copy the file
-                    let destination = PathBuf::from(&job.destination_dir);
-                    let destfile_relative: PathBuf = if job.keep_structure {
-                        PathBuf::from(&item)
-                            .strip_prefix(&job.source_dir)
-                            .unwrap_or(&PathBuf::from("")).to_path_buf()
-                        } else {
-                            PathBuf::from(&item.file_name().unwrap_or(
-                                &std::ffi::OsStr::new(""))).to_path_buf()
-                        };
-                        if destfile_relative.as_os_str().len() > 0 {
-                            let destfile_absolute = destination.join(destfile_relative);
-                            // now that the destination path is known, check
-                            // whether the list of matching files to delete
-                            // contains it and remove it from the list: in
-                            // this way the deletion process is selective and
-                            // only deletes unwanted files in the target
-                            // directory
-                            if files_to_delete.contains(&destfile_absolute) {
-                                files_to_delete.remove(
-                                    files_to_delete.iter()
-                                        .position(|x| x.as_path() == destfile_absolute.as_path())
-                                        .unwrap());     // cannot panic here
-                            }
-                            match copy_file(
-                                &item,
-                                &destfile_absolute,
-                                job.overwrite,
-                                job.skip_newer,
-                                job.check_content,
-                                job.follow_symlinks,
-                                job.create_directories,
-                                job.trash_on_overwrite,
-                            ) {
-                                    Outcome::Success => {
-                                        num_files_copied += 1;
-                                        if verbose {
-                                            println!("{}", _format_message_rsj(
-                                                parsable_output,
-                                                &job.job_name,
-                                                OPERATION_JOB_COPY,
-                                                ERR_OK,
-                                                &item,
-                                                &destfile_absolute,
-                                            ));
-                                        }
-                                    }
-                                    Outcome::Error(err) => {
-                                        if verbose {
-                                            eprintln!("{}", _format_message_rsj(
-                                                parsable_output,
-                                                &job.job_name,
-                                                OPERATION_JOB_COPY,
-                                                err,
-                                                &item,
-                                                &destfile_absolute,
-                                            ));
-                                        }
-                                        if job.halt_on_errors {
-                                            return Outcome::Error(CJERR_GENERIC_FAILURE);
-                                        };
-                                    }
-                                };
-                        } else {
-                            if verbose {
-                                eprintln!("{}", _format_message_rsj(
-                                    parsable_output,
-                                    &job.job_name,
-                                    OPERATION_JOB_COPY,
-                                    CJERR_CANNOT_DETERMINE_DESTFILE,
-                                    &item,
-                                    &destination,
-                                ));
-                            }
-                            if job.halt_on_errors {
-                                return Outcome::Error(CJERR_CANNOT_DETERMINE_DESTFILE)
-                            }
-                        }
-                }
-                // if not remove_other_matching the vector is empty
-                for item in files_to_delete {
-                    match remove_file(
+                    )
+                );
+            }
+            for item in files_to_copy {
+                // here we also copy the file
+                let destination = PathBuf::from(&job.destination_dir);
+                let destfile_relative: PathBuf = if job.keep_structure {
+                    PathBuf::from(&item)
+                        .strip_prefix(&job.source_dir)
+                        .unwrap_or(&PathBuf::from(""))
+                        .to_path_buf()
+                } else {
+                    PathBuf::from(&item.file_name().unwrap_or(&std::ffi::OsStr::new("")))
+                        .to_path_buf()
+                };
+                if destfile_relative.as_os_str().len() > 0 {
+                    let destfile_absolute = destination.join(destfile_relative);
+                    // now that the destination path is known, check
+                    // whether the list of matching files to delete
+                    // contains it and remove it from the list: in
+                    // this way the deletion process is selective and
+                    // only deletes unwanted files in the target
+                    // directory
+                    if files_to_delete.contains(&destfile_absolute) {
+                        files_to_delete.remove(
+                            files_to_delete
+                                .iter()
+                                .position(|x| x.as_path() == destfile_absolute.as_path())
+                                .unwrap(),
+                        ); // cannot panic here
+                    }
+                    match copy_file(
                         &item,
+                        &destfile_absolute,
+                        job.overwrite,
+                        job.skip_newer,
+                        job.check_content,
                         job.follow_symlinks,
-                        job.trash_on_delete,
+                        job.create_directories,
+                        job.trash_on_overwrite,
                     ) {
                         Outcome::Success => {
+                            num_files_copied += 1;
                             if verbose {
-                                println!("{}", _format_message_rsj(
+                                println!(
+                                    "{}",
+                                    _format_message_rsj(
+                                        parsable_output,
+                                        &job.job_name,
+                                        OPERATION_JOB_COPY,
+                                        ERR_OK,
+                                        &item,
+                                        &destfile_absolute,
+                                    )
+                                );
+                            }
+                        }
+                        Outcome::Error(err) => {
+                            if verbose {
+                                eprintln!(
+                                    "{}",
+                                    _format_message_rsj(
+                                        parsable_output,
+                                        &job.job_name,
+                                        OPERATION_JOB_COPY,
+                                        err,
+                                        &item,
+                                        &destfile_absolute,
+                                    )
+                                );
+                            }
+                            if job.halt_on_errors {
+                                return Outcome::Error(CJERR_GENERIC_FAILURE);
+                            };
+                        }
+                    };
+                } else {
+                    if verbose {
+                        eprintln!(
+                            "{}",
+                            _format_message_rsj(
+                                parsable_output,
+                                &job.job_name,
+                                OPERATION_JOB_COPY,
+                                CJERR_CANNOT_DETERMINE_DESTFILE,
+                                &item,
+                                &destination,
+                            )
+                        );
+                    }
+                    if job.halt_on_errors {
+                        return Outcome::Error(CJERR_CANNOT_DETERMINE_DESTFILE);
+                    }
+                }
+            }
+            // if not remove_other_matching the vector is empty
+            for item in files_to_delete {
+                match remove_file(&item, job.follow_symlinks, job.trash_on_delete) {
+                    Outcome::Success => {
+                        if verbose {
+                            println!(
+                                "{}",
+                                _format_message_rsj(
                                     parsable_output,
                                     &job.job_name,
                                     OPERATION_JOB_DEL,
                                     ERR_OK,
                                     &PathBuf::new(),
                                     &item,
-                                ));
-                            }
-                            num_files_deleted += 1;
+                                )
+                            );
                         }
-                        Outcome::Error(err) => {
-                            if verbose {
-                                eprintln!("{}", _format_message_rsj(
+                        num_files_deleted += 1;
+                    }
+                    Outcome::Error(err) => {
+                        if verbose {
+                            eprintln!(
+                                "{}",
+                                _format_message_rsj(
                                     parsable_output,
                                     &job.job_name,
                                     OPERATION_JOB_DEL,
                                     err,
                                     &PathBuf::new(),
                                     &item,
-                                ));
-                            }
-                            if job.halt_on_errors {
-                                return Outcome::Error(CJERR_GENERIC_FAILURE);
-                            };
+                                )
+                            );
                         }
+                        if job.halt_on_errors {
+                            return Outcome::Error(CJERR_GENERIC_FAILURE);
+                        };
                     }
                 }
-                if verbose {
-                    println!("{}", _format_jobinfo_rsj(
+            }
+            if verbose {
+                println!(
+                    "{}",
+                    _format_jobinfo_rsj(
                         parsable_output,
                         &job.job_name,
                         OPERATION_JOB_END,
                         ERR_OK,
                         num_files_copied,
                         num_files_deleted,
-                    ));
-                }
+                    )
+                );
             }
-            None => {
-                if verbose {
-                    eprintln!("{}", _format_jobinfo_rsj(
+        }
+        None => {
+            if verbose {
+                eprintln!(
+                    "{}",
+                    _format_jobinfo_rsj(
                         parsable_output,
                         &job.job_name,
                         OPERATION_JOB_END,
                         CJERR_NO_SOURCE_FILES,
                         0,
                         0,
-                    ));
-                }
-                return Outcome::Error(CJERR_NO_SOURCE_FILES);
+                    )
+                );
             }
+            return Outcome::Error(CJERR_NO_SOURCE_FILES);
+        }
     }
 
     Outcome::Success
 }
-
-
 
 /// Perform all jobs, according to the passed global config object and list
 /// of job configuration objects, that is the result of extract_config as
@@ -1670,16 +1698,19 @@ fn run_jobs(
     global_config: &CopyJobGlobalConfig,
     job_configs: &Vec<CopyJobConfig>,
 ) -> std::io::Result<()> {
-
     // local helpers:
 
     // l1. format a message (both machine readable and verbose output)
     fn _format_message_rj(parsable_output: bool, job: &str, code: u64) -> String {
         if parsable_output {
             format_output_parsable(
-                CONTEXT_TASK, job, code, OPERATION_JOB_END,
+                CONTEXT_TASK,
+                job,
+                code,
+                OPERATION_JOB_END,
                 &String::new(),
-                &String::new())
+                &String::new(),
+            )
         } else {
             if code == 0 {
                 format!("job {job} completed successfully")
@@ -1694,19 +1725,24 @@ fn run_jobs(
             match run_single_job(job, global_config.verbose, global_config.parsable_output) {
                 Outcome::Success => {
                     if global_config.verbose {
-                        println!("{}", _format_message_rj(
-                            global_config.parsable_output, &job.job_name, 0));
+                        println!(
+                            "{}",
+                            _format_message_rj(global_config.parsable_output, &job.job_name, 0)
+                        );
                     }
                 }
                 Outcome::Error(code) => {
                     if global_config.verbose {
-                        println!("{}", _format_message_rj(
-                            global_config.parsable_output, &job.job_name, code));
+                        println!(
+                            "{}",
+                            _format_message_rj(global_config.parsable_output, &job.job_name, code)
+                        );
                     }
                     if global_config.halt_on_errors {
                         return Err(std::io::Error::new(
                             std::io::ErrorKind::Interrupted,
-                            format_err_parsable(ERR_GENERIC)));
+                            format_err_parsable(ERR_GENERIC),
+                        ));
                     }
                 }
             }
@@ -1716,14 +1752,12 @@ fn run_jobs(
     Ok(())
 }
 
-
-
 // argument parsing and command execution: doc comments are used by clap
 use clap::Parser;
 
 /// Perform complex copy jobs according to criteria provided in a TOML file
 #[derive(Parser)]
-#[command(name="copyjob", version, about)]
+#[command(name = "copyjob", version, about)]
 struct Args {
     /// Suppress all output
     #[arg(short, long)]
@@ -1738,10 +1772,8 @@ struct Args {
     config: String,
 }
 
-
 // entry point: mandatory arguments are handled by the parser
 fn main() -> std::io::Result<()> {
-
     // formatter to write a message (here for coherence with other functions)
     fn _format_message_main(
         parsable_output: bool,
@@ -1754,15 +1786,15 @@ fn main() -> std::io::Result<()> {
         match e {
             Some(err) => {
                 if parsable_output {
-                    let code = u64::try_from(
-                        err.raw_os_error().unwrap_or(9999)).unwrap_or(9999);
+                    let code = u64::try_from(err.raw_os_error().unwrap_or(9999)).unwrap_or(9999);
                     format_output_parsable(
                         CONTEXT_MAIN,
                         name,
                         code,
                         operation,
                         msg_parsable,
-                        &err.to_string())
+                        &err.to_string(),
+                    )
                 } else {
                     format!("error: {msg_verbose} / {}", err.to_string())
                 }
@@ -1775,7 +1807,8 @@ fn main() -> std::io::Result<()> {
                         ERR_OK,
                         operation,
                         msg_parsable,
-                        &String::new())
+                        &String::new(),
+                    )
                 } else {
                     format!("info: {msg_verbose}")
                 }
@@ -1795,46 +1828,66 @@ fn main() -> std::io::Result<()> {
             .canonicalize()
             .unwrap_or(PathBuf::new()),
         !args.quiet,
-        args.parsable_output);
+        args.parsable_output,
+    );
 
     match config {
         Ok((global, jobs)) => {
             if !args.quiet {
-                println!("{}", _format_message_main(
-                    args.parsable_output,
-                    OPERATION_CONFIG,
-                    &global.config_file.as_os_str().to_str().unwrap_or(&String::new()),
-                    None,
-                    &String::new(),
-                    &format!("using configuration file {}",
-                        global.config_file.as_os_str().to_str().unwrap_or(&String::new())),
-                ));
+                println!(
+                    "{}",
+                    _format_message_main(
+                        args.parsable_output,
+                        OPERATION_CONFIG,
+                        &global
+                            .config_file
+                            .as_os_str()
+                            .to_str()
+                            .unwrap_or(&String::new()),
+                        None,
+                        &String::new(),
+                        &format!(
+                            "using configuration file {}",
+                            global
+                                .config_file
+                                .as_os_str()
+                                .to_str()
+                                .unwrap_or(&String::new())
+                        ),
+                    )
+                );
             }
 
             match run_jobs(&global, &jobs) {
                 Ok(_) => {
                     if !args.quiet {
-                        println!("{}", _format_message_main(
-                            args.parsable_output,
-                            OPERATION_MAIN_END,
-                            &String::new(),
-                            None,
-                            &format_err_parsable(ERR_OK),
-                            &format_err_verbose(ERR_OK),
-                        ));
+                        println!(
+                            "{}",
+                            _format_message_main(
+                                args.parsable_output,
+                                OPERATION_MAIN_END,
+                                &String::new(),
+                                None,
+                                &format_err_parsable(ERR_OK),
+                                &format_err_verbose(ERR_OK),
+                            )
+                        );
                     }
                     Ok(())
                 }
                 Err(e) => {
                     if !args.quiet {
-                        eprintln!("{}", _format_message_main(
-                            args.parsable_output,
-                            OPERATION_MAIN_END,
-                            &String::new(),
-                            Some(e),
-                            &format_err_parsable(ERR_GENERIC),
-                            &format_err_verbose(ERR_GENERIC),
-                        ));
+                        eprintln!(
+                            "{}",
+                            _format_message_main(
+                                args.parsable_output,
+                                OPERATION_MAIN_END,
+                                &String::new(),
+                                Some(e),
+                                &format_err_parsable(ERR_GENERIC),
+                                &format_err_verbose(ERR_GENERIC),
+                            )
+                        );
                     }
                     std::process::exit(2);
                 }
@@ -1842,19 +1895,21 @@ fn main() -> std::io::Result<()> {
         }
         Err(e) => {
             if !args.quiet {
-                eprintln!("{}", _format_message_main(
-                    args.parsable_output,
-                    OPERATION_MAIN_END,
-                    &String::new(),
-                    Some(e),
-                    &format_err_parsable(ERR_INVALID_CONFIG_FILE),
-                    &format_err_verbose(ERR_INVALID_CONFIG_FILE),
-                ));
+                eprintln!(
+                    "{}",
+                    _format_message_main(
+                        args.parsable_output,
+                        OPERATION_MAIN_END,
+                        &String::new(),
+                        Some(e),
+                        &format_err_parsable(ERR_INVALID_CONFIG_FILE),
+                        &format_err_verbose(ERR_INVALID_CONFIG_FILE),
+                    )
+                );
             }
             std::process::exit(2);
         }
     }
 }
-
 
 // end.
