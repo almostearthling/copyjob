@@ -347,11 +347,7 @@ fn extract_config(
     fn _ec_error_invalid_config(key: &str) -> std::io::Error {
         std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            format!(
-                "{}:{key}",
-                format_err_parsable(ERR_INVALID_CONFIG_FILE)
-            )
-            .as_str(),
+            format!("{}:{key}", format_err_parsable(ERR_INVALID_CONFIG_FILE)).as_str(),
         )
     }
 
@@ -398,8 +394,7 @@ fn extract_config(
                                 + &String::from(&result[1..]); // to preserve the slash
                         }
                         "CONFIG-FILE-DIR" => {
-                            result = 
-                                config_file_dir.to_string_lossy().to_string()
+                            result = config_file_dir.to_string_lossy().to_string()
                                 + &String::from(&result[1..]); // to preserve the slash
                         }
                         _ => {}
@@ -487,10 +482,8 @@ fn extract_config(
         "job",
     ];
 
-    let config_map = match toml::from_str(&fs::read_to_string(config_file)?.as_str()) {
-        Ok(toml_text) => {
-            CfgMap::from_toml(toml_text)
-        }
+    let config_map = match toml::from_str(fs::read_to_string(config_file)?.as_str()) {
+        Ok(toml_text) => CfgMap::from_toml(toml_text),
         _ => {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -1032,24 +1025,23 @@ fn list_files_matching(
     // path separators on Windows and UNIX
     let ps = if cfg!(windows) { "\\" } else { "/" };
     let psre = format!("\\{ps}");
-    let excludedir_match =
-        RegexBuilder::new(format!("{psre}{excludedir_pattern}{psre}").as_str())
-            .case_insensitive(!case_sensitive)
-            .build()
-            .unwrap_or(RE_MATCH_NO_FILE.clone());
+    let excludedir_match = RegexBuilder::new(format!("{psre}{excludedir_pattern}{psre}").as_str())
+        .case_insensitive(!case_sensitive)
+        .build()
+        .unwrap_or(RE_MATCH_NO_FILE.clone());
 
     let depth: usize = if recursive { usize::MAX } else { 1 };
     let mut result: Vec<PathBuf> = Vec::new();
     let search_dir_strlen = search_dir.to_str().unwrap_or("").len() - 1;
 
-    for entry in WalkDir::new(&search_dir)
+    for entry in WalkDir::new(search_dir)
         .max_depth(depth)
         .follow_links(follow_symlinks)
         .into_iter()
         .filter_map(|e| e.ok())
     {
         // skip errors
-        if !entry.file_type().is_dir() && !(follow_symlinks && entry.file_type().is_symlink()) {
+        if !(entry.file_type().is_dir() || (follow_symlinks && entry.file_type().is_symlink())) {
             let mut dir_pathbuf = PathBuf::from(entry.path());
             let subdir_name = if dir_pathbuf.pop() {
                 let mut res = String::new();
@@ -1072,8 +1064,8 @@ fn list_files_matching(
             };
             if subdir_name != "*" && !excludedir_match.is_match(&subdir_name) {
                 if let Some(file_name) = entry.path().file_name() {
-                    if include_match.is_match(&file_name.to_str().unwrap_or(""))
-                        && !exclude_match.is_match(&file_name.to_str().unwrap_or(""))
+                    if include_match.is_match(file_name.to_str().unwrap_or(""))
+                        && !exclude_match.is_match(file_name.to_str().unwrap_or(""))
                     {
                         result.push(PathBuf::from(entry.path()));
                     }
@@ -1102,8 +1094,8 @@ fn list_files_matching(
 ///     create_directories: create directory if it does not exist yet
 ///     trash_on_overwrite: to send to garbage bin instead of overwriting
 fn copy_file(
-    source: &PathBuf,
-    destination: &PathBuf,
+    source: &Path,
+    destination: &Path,
     overwrite: bool,
     skip_newer: bool,
     check_content: bool,
@@ -1112,7 +1104,7 @@ fn copy_file(
     trash_on_overwrite: bool,
 ) -> Outcome {
     // normalize paths
-    let source_path = PathBuf::from(&source.canonicalize().unwrap_or(PathBuf::new()));
+    let source_path = PathBuf::from(&source.canonicalize().unwrap_or_default());
     let destination_path = PathBuf::from(
         &destination
             .canonicalize()
@@ -1216,7 +1208,7 @@ fn copy_file(
                             if !create_directories {
                                 return Outcome::Error(FOERR_CANNOT_CREATE_DIR);
                             }
-                            if let Err(_) = create_dir_all(&destination_dir) {
+                            if create_dir_all(&destination_dir).is_err() {
                                 return Outcome::Error(FOERR_CANNOT_CREATE_DIR);
                             }
                         }
@@ -1232,23 +1224,24 @@ fn copy_file(
             }
 
             // actually copy the file using OS API
-            let res = fs::copy(&source_path, &destination_path);
-            match res {
+            // let res = fs::copy(&source_path, &destination_path);
+            match fs::copy(&source_path, &destination_path) {
                 Ok(_) => {
                     // FileOpOutcome::Success is returned only here, after an
                     // actually successful copy operation
-                    return Outcome::Success;
+                    Outcome::Success
                 }
                 Err(res_err) => {
                     if res_err.kind() == std::io::ErrorKind::PermissionDenied {
-                        return Outcome::Error(FOERR_DESTINATION_IS_READONLY);
+                        Outcome::Error(FOERR_DESTINATION_IS_READONLY)
+                    } else {
+                        Outcome::Error(FOERR_GENERIC_FAILURE)
                     }
-                    return Outcome::Error(FOERR_GENERIC_FAILURE);
                 }
             }
         }
         Err(_) => {
-            return Outcome::Error(FOERR_SOURCE_NOT_ACCESSIBLE);
+            Outcome::Error(FOERR_SOURCE_NOT_ACCESSIBLE)
         }
     }
 }
@@ -1259,38 +1252,35 @@ fn copy_file(
 ///     destination: the full specification of destination file
 ///     follow_symlinks: follow symbolic links
 ///     trash_on_delete: to send to garbage bin instead of deleting
-fn remove_file(destination: &PathBuf, follow_symlinks: bool, trash_on_delete: bool) -> Outcome {
+fn remove_file(destination: &Path, follow_symlinks: bool, trash_on_delete: bool) -> Outcome {
     // normalize paths
-    let destination_path = PathBuf::from(&destination.canonicalize().unwrap_or(PathBuf::new()));
+    let destination_path = destination.canonicalize().unwrap_or_default();
 
     match metadata(&destination_path) {
         Ok(d_stat) => {
             // if we are here, then destination exists
             if d_stat.is_dir() {
-                return Outcome::Error(FOERR_DESTINATION_IS_DIR);
+                Outcome::Error(FOERR_DESTINATION_IS_DIR)
             } else if d_stat.is_symlink() && !follow_symlinks {
-                return Outcome::Error(FOERR_DESTINATION_IS_SYMLINK);
-            }
-            if trash_on_delete {
-                if let Err(_) = trash::delete(&destination_path) {
-                    if let Ok(_) = fs::remove_file(destination_path) {
-                        return Outcome::Success;
+                Outcome::Error(FOERR_DESTINATION_IS_SYMLINK)
+            } else if trash_on_delete {
+                if trash::delete(&destination_path).is_err() {
+                    if fs::remove_file(destination_path).is_ok() {
+                        Outcome::Success
                     } else {
-                        return Outcome::Error(FOERR_DESTINATION_NOT_ACCESSIBLE);
+                        Outcome::Error(FOERR_DESTINATION_NOT_ACCESSIBLE)
                     }
                 } else {
-                    return Outcome::Success;
+                    Outcome::Success
                 }
+            } else if fs::remove_file(destination_path).is_ok() {
+                Outcome::Success
             } else {
-                if let Ok(_) = fs::remove_file(destination_path) {
-                    return Outcome::Success;
-                } else {
-                    return Outcome::Error(FOERR_DESTINATION_NOT_ACCESSIBLE);
-                }
+                Outcome::Error(FOERR_DESTINATION_NOT_ACCESSIBLE)
             }
         }
         Err(_) => {
-            return Outcome::Error(FOERR_DESTINATION_NOT_ACCESSIBLE);
+            Outcome::Error(FOERR_DESTINATION_NOT_ACCESSIBLE)
         }
     }
 }
@@ -1332,8 +1322,8 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                 job,
                 code,
                 operation,
-                &source.to_str().unwrap_or("<unknown>"),
-                &destination.to_str().unwrap_or("<unknown>"),
+                source.to_str().unwrap_or("<unknown>"),
+                destination.to_str().unwrap_or("<unknown>"),
             )
         } else {
             match operation {
@@ -1355,10 +1345,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                 }
                 OPERATION_JOB_DEL => {
                     if code == 0 {
-                        format!(
-                            "removed in job {job}: {}",
-                            destination.display(),
-                        )
+                        format!("removed in job {job}: {}", destination.display(),)
                     } else {
                         format!(
                             "error in job {job}: '{}' while removing {}",
@@ -1424,7 +1411,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
     }
 
     // source and destination must exist and be canonicalizeable
-    let source_directory = PathBuf::from(&job.source_dir.canonicalize().unwrap_or(PathBuf::new()));
+    let source_directory = PathBuf::from(&job.source_dir.canonicalize().unwrap_or_default());
     if !source_directory.exists() {
         if verbose {
             eprintln!(
@@ -1441,23 +1428,21 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
         }
         return Outcome::Error(CJERR_SOURCE_DIR_NOT_EXISTS);
     }
-    if !job.destination_dir.exists() {
-        if !job.create_directories {
-            if verbose {
-                eprintln!(
-                    "{}",
-                    _format_jobinfo_rsj(
-                        parsable_output,
-                        &job.job_name,
-                        OPERATION_JOB_BEGIN,
-                        CJERR_DESTINATION_DIR_NOT_EXISTS,
-                        0,
-                        0,
-                    )
-                );
-            }
-            return Outcome::Error(CJERR_DESTINATION_DIR_NOT_EXISTS);
+    if !job.destination_dir.exists() && !job.create_directories {
+        if verbose {
+            eprintln!(
+                "{}",
+                _format_jobinfo_rsj(
+                    parsable_output,
+                    &job.job_name,
+                    OPERATION_JOB_BEGIN,
+                    CJERR_DESTINATION_DIR_NOT_EXISTS,
+                    0,
+                    0,
+                )
+            );
         }
+        return Outcome::Error(CJERR_DESTINATION_DIR_NOT_EXISTS);
     }
 
     // build the list of files to be copied
@@ -1483,7 +1468,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                     job.follow_symlinks,
                     job.case_sensitive,
                 )
-                .unwrap_or(Vec::new())
+                .unwrap_or_default()
             } else {
                 Vec::new()
             };
@@ -1509,7 +1494,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                         .unwrap_or(&PathBuf::from(""))
                         .to_path_buf()
                 } else {
-                    PathBuf::from(&item.file_name().unwrap_or(&std::ffi::OsStr::new("")))
+                    PathBuf::from(&item.file_name().unwrap_or(std::ffi::OsStr::new("")))
                         .to_path_buf()
                 };
                 if !destfile_relative.as_os_str().is_empty() {
@@ -1692,12 +1677,10 @@ fn run_jobs(
     fn _format_message_rj(parsable_output: bool, job: &str, code: u64) -> String {
         if parsable_output {
             format_output_parsable(CONTEXT_TASK, job, code, OPERATION_JOB_END, "", "")
+        } else if code == 0 {
+            format!("job {job} completed successfully")
         } else {
-            if code == 0 {
-                format!("job {job} completed successfully")
-            } else {
-                format!("job {job} failed with error '{}'", format_err_verbose(code))
-            }
+            format!("job {job} failed with error '{}'", format_err_verbose(code))
         }
     }
 
@@ -1777,7 +1760,7 @@ fn main() -> std::io::Result<()> {
                         &err.to_string(),
                     )
                 } else {
-                    format!("error: {msg_verbose} / {}", err.to_string())
+                    format!("error: {msg_verbose} / {err}")
                 }
             }
             _ => {
@@ -1813,7 +1796,7 @@ fn main() -> std::io::Result<()> {
                     _format_message_main(
                         args.parsable_output,
                         OPERATION_CONFIG,
-                        &global.config_file.as_os_str().to_str().unwrap_or(""),
+                        global.config_file.as_os_str().to_str().unwrap_or(""),
                         None,
                         "",
                         &format!(
@@ -1877,6 +1860,5 @@ fn main() -> std::io::Result<()> {
         }
     }
 }
-
 
 // end.
