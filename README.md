@@ -24,9 +24,9 @@ most shells. Patterns are provided as lists of regular expression strings,
 so that matching any of the list items is considered a good match for the
 given condition.
 
-For a description of TOML as a configuration file language, see
-[here](https://toml.io/),
-and for a description of regular expression syntax and semantics, see
+For a description of TOML as a configuration file language, see the language
+[specification](https://toml.io/), and for a description of regular expression
+syntax and semantics, see
 [Wikipedia](https://en.wikipedia.org/wiki/Regular_expression);
 there are many useful tutorial around about *RE*s, and also many syntax
 checkers and interactive tools to test patterns before using them in real
@@ -86,20 +86,17 @@ of a working configuration file:
 
 # jobs to actually perform
 active_jobs = [
-    "Reports",
-#    "CurrentSummary",
+  "Reports",
+#  "CurrentSummary",
 ]
-
 
 # override defaults globally
 case_sensitive = false
-
 
 # variables defined at configuration level
 [variables]
 SOURCE_BASE = "${HOME}/Documents"
 DEST_BASE = "${HOME}/CloudSync/SyncedDocs"
-
 
 # list of all jobs
 [[job]]
@@ -108,9 +105,9 @@ source = "%{SOURCE_BASE}/MyData"
 destination = "%{DEST_BASE}/Reports"
 keep_structure = false
 patterns_include = [
-    'Report_.*\.pdf',
-    'Report_.*\.docx?',
-    'Report_.*\.xlsx?',
+  'Report_.*\.pdf',
+  'Report_.*\.docx?',
+  'Report_.*\.xlsx?',
 ]
 
 [[job]]
@@ -119,7 +116,6 @@ source = "%{SOURCE_BASE}/MyData"
 destination = "%{DEST_BASE}/Summary"
 patterns_include = ['Current Summary v[1-9][0-9]*\.pptx?']
 recursive = false
-
 
 # end.
 ```
@@ -202,7 +198,11 @@ performed (although **copyjob** will not issue an error). This is done by
 defining the list:
 
 ```toml
-active_jobs = [ "name1", "name2", ... ]
+active_jobs = [
+  "name1",
+  "name2",
+  # ...
+]
 ```
 
 where the jobs *name1*, *name2*, and so on *must* be defined, otherwise the
@@ -219,7 +219,7 @@ value `/some`. The syntax is the following:
 [variables]
 VAR1 = "some value"
 VAR2 = "/a/path/chunk"
-...
+# ...
 ```
 
 where `VAR1`, `VAR2` and so on are alphanumeric strings that begin with an
@@ -362,86 +362,6 @@ A compact JSON output can be produced, easier to parse for other programs:
 although **copyjob** is suitable to be used directly from the CLI, it can be
 wrapped into a more user-friendly tool, be it still CLI oriented or providing
 a GUI.
-
-
-## Why **copyjob**?
-
-I actually *needed* this tool. There are some alternatives, such as
-[rsync](https://rsync.samba.org/),
-[unison](https://www.cis.upenn.edu/~bcpierce/unison/),
-and similar utilities. However, these programs tend to be bare in terms
-of defining what has to be replicated (mostly defining a source, a target,
-and possibly some simple criteria to specify what to replicate), and tend
-on the other hand to focus on network capabilities, efficiency and bandwidth
-optimization. What I needed was something that could easily copy some
-documents from one directory to another, while performing even cumbersome
-selections of files in the directory of origin. I needed no network support:
-the common synchronization utilities (as [Nextcloud](https://nextcloud.com/))
-would do this for me. I need to share documents with teams, these documents
-are in fact produced by different people, that use different naming
-strategies: of course, a better practice would be to change file names
-according to some logical pattern, but this is not always possible, mostly
-because these files tend to propagate via other means (e-mail) than common
-repositories - and, in such cases, different names might be interpreted as
-different documents or at least as different versions of the same document.
-Thus I decided that the best strategy was to use and distribute documents
-preserving their original names.
-
-I keep these files in a directory structure that can optimistically be
-defined as an awful mess, but which, in the end, is the one that I now
-understand and can cope with. However, I cannot share these directories
-with my collaborators, both because they have a structure that doesn't
-make much sense if you don't see the whole thing and because the folders
-contain much more files than the ones that have to be accessible to the
-team. So I decided to develop this small utility. Now, for each directory
-containing files that I need to share, I write a simple *copyjob.toml*
-file. A script in the main document folder finds them recursively and
-executes **copyjob** on each of them:
-
-```sh
-#!/bin/sh
-find . -name 'copyjob.toml' -exec copyjob {} \;
-```
-
-It took me an afternoon to write it in Python, and another day to fine-tune
-the Python version in order to have a prettier output and all the needed
-parameters and features. But since I wanted to experiment Rust, I decided
-that such a simple tool could have been suitable for my first Rust project,
-and so it was. It took me *weeks*. I'm still working on a CLI wrapper for
-**copyjob**, this time in Python, to cover logging and console output.
-
-Nowadays the core (namely, the resident part) of my legacy utility dubbed
-[When](https://github.com/almostearthling/when-command) has been completely
-reworked in Rust, as [whenever](https://github.com/almostearthling/whenever):
-in this moment the original project is temporarily quiescent, especially
-because I'm not using Linux as my main desktop operating system now, but also
-because it is quite difficult to follow the continuous changes in the *DBus*
-messages, services and methods in the versions of Ubuntu that followed the
-18.04 release. The next version of *When* will be platform independent, and
-its core is already working with the same features (more than the ones that
-*When* used to have) on both Windows and Linux. Of course, even with a
-development version, I am already able to use **copyjob** in *whenever* jobs.
-
-There is an entire paragraph in this document, named *Disclaimer*, that
-basically states that anyone should use this small utility at their own risk.
-That said, while it's true that **copyjob** can *permanently delete* files at
-the destination directory (if instructed to do so), one should also consider
-what to use **copyjob** for: it's designed to automate replication tasks in a
-way that attempts to keep the destination directory structure consistent
-through consecutive updates. Normally there shouldn't be "unique" documents in
-the destination folder, but only copies managed by **copyjob** itself. In this
-case it's quite safe to use it, as source documents are *never* deleted or
-modified.
-
-Also, this is a *quick-and-dirty* utility (at least for now): it focuses on
-getting the job(s) done considering that files are replicated from one folder
-to another *on a personal computer*: no checks are performed on concurrency
-issues, and possible errors during copy only depend on OS issues such as user
-rights on destination directories and files.
-
-I actually use **copyjob** on a daily basis, and it sometimes unintentionally
-refused to overwrite or delete files in the destination folder - in its really
-early editions - but it never erroneously lost a file.
 
 
 ## License
