@@ -13,7 +13,7 @@ use std::io::Read;
 use lazy_static::lazy_static;
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use regex::{Regex, RegexBuilder};
 
@@ -24,8 +24,6 @@ use cfgmap::{CfgMap, CfgValue, Checkable, Condition::*};
 use data_encoding::HEXLOWER;
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use toml;
-use trash;
 
 // Structures used for a copy job configuration and the global configuration:
 // values provided in CopyJobConfig default to the ones provided globally in
@@ -232,13 +230,13 @@ lazy_static! {
 }
 
 // helper to convert a list of regexp patterns into a single ORed regexp
-fn combine_regexp_patterns(res: &Vec<String>) -> String {
-    format!("({})", String::from(res.join("|")))
+fn combine_regexp_patterns(res: &[String]) -> String {
+    format!("({})", res.join("|"))
 }
 
 // Helper to calculate hash for a single file
 // see https://stackoverflow.com/a/71606608/5138770
-fn sha256_digest(path: &PathBuf) -> std::io::Result<String> {
+fn sha256_digest(path: &Path) -> std::io::Result<String> {
     let input = File::open(path)?;
     let mut reader = BufReader::new(input);
 
@@ -283,35 +281,30 @@ fn format_output_parsable(
     arg1: &str,
     arg2: &str,
 ) -> String {
-    let mname: String;
-    let mtype: String;
-    let marg1: String;
-    let marg2: String;
-
     let mresult = format_err_parsable(code);
-    if code == 0 {
-        mtype = String::from("INFO");
+    let mtype = if code == 0 {
+        String::from("INFO")
     } else {
-        mtype = String::from("ERROR");
-    }
+        String::from("ERROR")
+    };
 
-    if name.is_empty() {
-        mname = String::from("<N/A>");
+    let mname = if name.is_empty() {
+        String::from("<N/A>")
     } else {
-        mname = String::from(name);
-    }
+        String::from(name)
+    };
 
-    if arg1.is_empty() {
-        marg1 = String::from("<N/A>");
+    let marg1 = if arg1.is_empty() {
+        String::from("<N/A>")
     } else {
-        marg1 = String::from(arg1);
-    }
+        String::from(arg1)
+    };
 
-    if arg2.is_empty() {
-        marg2 = String::from("<N/A>");
+    let marg2 = if arg2.is_empty() {
+        String::from("<N/A>")
     } else {
-        marg2 = String::from(arg2);
-    }
+        String::from(arg2)
+    };
 
     // construct a JSON message that reports the context, the type of message,
     // the result both as an integer (see the *ERR_* constants above) and as a
@@ -343,7 +336,6 @@ fn format_output_parsable(
 ///
 /// As internal functions it also includes utilities for string replacement
 /// in the handled paths.
-
 fn extract_config(
     config_file: &PathBuf,
     verbose: bool,
@@ -355,10 +347,10 @@ fn extract_config(
     fn _ec_error_invalid_config(key: &str) -> std::io::Error {
         std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            String::from(format!(
+            format!(
                 "{}:{key}",
                 format_err_parsable(ERR_INVALID_CONFIG_FILE)
-            ))
+            )
             .as_str(),
         )
     }
@@ -378,13 +370,13 @@ fn extract_config(
         // WARNING: this actually assumes that the regular expression pattern
         //          "[%$]\{[a-zA-Z_][a-zA-Z0-9_]*\}" cannot appear in the source or
         //          the destination directory within job definitions
-        while let Some(caps) = pattern.captures(&result.as_str()) {
+        while let Some(caps) = pattern.captures(result.as_str()) {
             let varname = caps.get(1).map_or("", |m| m.as_str());
-            let occurrence = format.replace("*", &varname);
+            let occurrence = format.replace("*", varname);
             if let Some(replacement) = vars.get(varname) {
                 result = result.replace(&occurrence, replacement);
             } else {
-                result = result.replace(&occurrence, &String::new());
+                result = result.replace(&occurrence, "");
             }
         }
         result
@@ -393,22 +385,22 @@ fn extract_config(
     // l3. handle special path markers
     fn _ec_replace_markers_in_string(
         source: &str,
-        user_home: &PathBuf,
-        config_file_dir: &PathBuf,
+        user_home: &Path,
+        config_file_dir: &Path,
     ) -> String {
         let mut result = String::from(source);
         for (mkey, mlist) in DIR_MARKERS.clone().iter() {
             for marker in mlist {
-                if result.starts_with(*marker) {
+                if result.starts_with(marker) {
                     match *mkey {
                         "USER-HOME" => {
-                            result = String::from(&user_home.clone().to_string_lossy().to_string())
-                                + &result[1..]; // to preserve the slash
+                            result = user_home.to_string_lossy().to_string()
+                                + &String::from(&result[1..]); // to preserve the slash
                         }
                         "CONFIG-FILE-DIR" => {
-                            result = String::from(
-                                &config_file_dir.clone().to_string_lossy().to_string(),
-                            ) + &result[1..]; // to preserve the slash
+                            result = 
+                                config_file_dir.to_string_lossy().to_string()
+                                + &String::from(&result[1..]); // to preserve the slash
                         }
                         _ => {}
                     }
@@ -439,13 +431,13 @@ fn extract_config(
             if path.ends_with("\\") || path.ends_with("/") {
                 String::from(path)
             } else {
-                String::from(path.to_owned() + "\\")
+                path.to_owned() + "\\"
             }
         } else {
             if path.ends_with("/") {
                 String::from(path)
             } else {
-                String::from(path.to_owned() + "/")
+                path.to_owned() + "/"
             }
         }
     }
@@ -477,29 +469,27 @@ fn extract_config(
     };
     let mut job_configs: Vec<CopyJobConfig> = Vec::new();
     let mut check_active_jobs: Vec<String> = Vec::new();
-    let allowed_globals: Vec<String> = vec![
-        String::from("active_jobs"),
-        String::from("variables"),
-        String::from("recursive"),
-        String::from("case_sensitive"),
-        String::from("follow_symlinks"),
-        String::from("overwrite"),
-        String::from("skip_newer"),
-        String::from("check_content"),
-        String::from("remove_others_matching"),
-        String::from("create_directories"),
-        String::from("keep_structure"),
-        String::from("trash_on_delete"),
-        String::from("trash_on_overwrite"),
-        String::from("halt_on_errors"),
-        String::from("job"),
+    let allowed_globals = vec![
+        "active_jobs",
+        "variables",
+        "recursive",
+        "case_sensitive",
+        "follow_symlinks",
+        "overwrite",
+        "skip_newer",
+        "check_content",
+        "remove_others_matching",
+        "create_directories",
+        "keep_structure",
+        "trash_on_delete",
+        "trash_on_overwrite",
+        "halt_on_errors",
+        "job",
     ];
 
-    let config_map: CfgMap; // to be initialized below
-
-    match toml::from_str(&fs::read_to_string(config_file)?.as_str()) {
+    let config_map = match toml::from_str(&fs::read_to_string(config_file)?.as_str()) {
         Ok(toml_text) => {
-            config_map = CfgMap::from_toml(toml_text);
+            CfgMap::from_toml(toml_text)
         }
         _ => {
             return Err(std::io::Error::new(
@@ -507,17 +497,17 @@ fn extract_config(
                 format_err_parsable(ERR_INVALID_CONFIG_FILE),
             ));
         }
-    }
+    };
 
     // check that global keys are all known: if not report offending key
     for key in config_map.keys() {
-        if !allowed_globals.contains(key) {
+        if !allowed_globals.contains(&key.as_str()) {
             return Err(_ec_error_invalid_config(key));
         }
     }
 
     // strings that will be used to build actal paths
-    let var_user_home = PathBuf::from(home_dir().unwrap());
+    let var_user_home = home_dir().unwrap();
     let var_config_file_dir = PathBuf::from(config_file.clone().parent().unwrap());
 
     let mut sys_variables: HashMap<String, String> = HashMap::new();
@@ -532,7 +522,7 @@ fn extract_config(
 
     // 1. list of active jobs (will be checked later)
     let cur_key = "active_jobs";
-    let cur_item = config_map.get(&cur_key);
+    let cur_item = config_map.get(cur_key);
     if !cur_item.check_that(IsList) {
         return Err(_ec_error_invalid_config(cur_key));
     } else {
@@ -557,7 +547,7 @@ fn extract_config(
     // 2. HashMap of local variables
     let cur_key = "variables";
     if config_map.contains_key(cur_key) {
-        let cur_item = config_map.get(&cur_key);
+        let cur_item = config_map.get(cur_key);
         if !cur_item.check_that(IsMap) {
             return Err(_ec_error_invalid_config(cur_key));
         } else {
@@ -580,7 +570,7 @@ fn extract_config(
 
     // 3. recursive flag
     let cur_key = "recursive";
-    let cur_item = config_map.get(&cur_key);
+    let cur_item = config_map.get(cur_key);
     match cur_item {
         Some(item) => {
             if !item.is_bool() {
@@ -593,7 +583,7 @@ fn extract_config(
 
     // 4. case sensitivity
     let cur_key = "case_sensitive";
-    let cur_item = config_map.get(&cur_key);
+    let cur_item = config_map.get(cur_key);
     match cur_item {
         Some(item) => {
             if !item.is_bool() {
@@ -606,7 +596,7 @@ fn extract_config(
 
     // 5. whether or not to follow symlinks
     let cur_key = "follow_symlinks";
-    let cur_item = config_map.get(&cur_key);
+    let cur_item = config_map.get(cur_key);
     match cur_item {
         Some(item) => {
             if !item.is_bool() {
@@ -619,7 +609,7 @@ fn extract_config(
 
     // 6. whether or not to overwrite destination
     let cur_key = "overwrite";
-    let cur_item = config_map.get(&cur_key);
+    let cur_item = config_map.get(cur_key);
     match cur_item {
         Some(item) => {
             if !item.is_bool() {
@@ -632,7 +622,7 @@ fn extract_config(
 
     // 7. newer version skipping
     let cur_key = "skip_newer";
-    let cur_item = config_map.get(&cur_key);
+    let cur_item = config_map.get(cur_key);
     match cur_item {
         Some(item) => {
             if !item.is_bool() {
@@ -645,7 +635,7 @@ fn extract_config(
 
     // 8. whether to check if source == destination
     let cur_key = "check_content";
-    let cur_item = config_map.get(&cur_key);
+    let cur_item = config_map.get(cur_key);
     match cur_item {
         Some(item) => {
             if !item.is_bool() {
@@ -658,7 +648,7 @@ fn extract_config(
 
     // 9. remove matching destination files
     let cur_key = "remove_others_matching";
-    let cur_item = config_map.get(&cur_key);
+    let cur_item = config_map.get(cur_key);
     match cur_item {
         Some(item) => {
             if !item.is_bool() {
@@ -671,7 +661,7 @@ fn extract_config(
 
     // 10. create directory structure if not found
     let cur_key = "create_directories";
-    let cur_item = config_map.get(&cur_key);
+    let cur_item = config_map.get(cur_key);
     match cur_item {
         Some(item) => {
             if !item.is_bool() {
@@ -684,7 +674,7 @@ fn extract_config(
 
     // 11. keep source directory structure or flat
     let cur_key = "keep_structure";
-    let cur_item = config_map.get(&cur_key);
+    let cur_item = config_map.get(cur_key);
     match cur_item {
         Some(item) => {
             if !item.is_bool() {
@@ -697,7 +687,7 @@ fn extract_config(
 
     // 12. halt on errors or continue
     let cur_key = "trash_on_delete";
-    let cur_item = config_map.get(&cur_key);
+    let cur_item = config_map.get(cur_key);
     match cur_item {
         Some(item) => {
             if !item.is_bool() {
@@ -710,7 +700,7 @@ fn extract_config(
 
     // 13. halt on errors or continue
     let cur_key = "trash_on_overwrite";
-    let cur_item = config_map.get(&cur_key);
+    let cur_item = config_map.get(cur_key);
     match cur_item {
         Some(item) => {
             if !item.is_bool() {
@@ -723,7 +713,7 @@ fn extract_config(
 
     // 14. halt on errors or continue
     let cur_key = "halt_on_errors";
-    let cur_item = config_map.get(&cur_key);
+    let cur_item = config_map.get(cur_key);
     match cur_item {
         Some(item) => {
             if !item.is_bool() {
@@ -741,13 +731,13 @@ fn extract_config(
     // in their combined version (in fact allowing multiple patterns is only
     // a way to facilitate writing the configuration file)
     let cur_key = "job";
-    let cur_item = config_map.get(&cur_key);
+    let cur_item = config_map.get(cur_key);
     match cur_item {
         Some(c) => {
             if !c.is_list() {
                 return Err(_ec_error_invalid_config(cur_key));
             }
-            for elem in c.as_list().unwrap_or(&Vec::<CfgValue>::new()).into_iter() {
+            for elem in c.as_list().unwrap_or(&Vec::<CfgValue>::new()).iter() {
                 if !elem.is_map() {
                     return Err(_ec_error_invalid_config(cur_key));
                 } else {
@@ -851,7 +841,7 @@ fn extract_config(
                                 let mut li: Vec<String> = Vec::new();
                                 for i in item.as_list().unwrap() {
                                     if let Some(s) = i.as_str() {
-                                        if s.len() > 0 {
+                                        if !s.is_empty() {
                                             li.push(String::from(s));
                                         }
                                     }
@@ -866,7 +856,7 @@ fn extract_config(
                                 let mut li: Vec<String> = Vec::new();
                                 for i in item.as_list().unwrap() {
                                     if let Some(s) = i.as_str() {
-                                        if s.len() > 0 {
+                                        if !s.is_empty() {
                                             li.push(String::from(s));
                                         }
                                     }
@@ -881,7 +871,7 @@ fn extract_config(
                                 let mut li: Vec<String> = Vec::new();
                                 for i in item.as_list().unwrap() {
                                     if let Some(s) = i.as_str() {
-                                        if s.len() > 0 {
+                                        if !s.is_empty() {
                                             li.push(String::from(s));
                                         }
                                     }
@@ -977,7 +967,7 @@ fn extract_config(
                             }
                         }
                     }
-                    if job.job_name.len() == 0 {
+                    if job.job_name.is_empty() {
                         return Err(_ec_error_invalid_config(cur_key));
                     }
                     global_config.job_list.push(String::from(&job.job_name));
@@ -990,7 +980,7 @@ fn extract_config(
 
     // check that all active jobs that have been listed are actually defined
     let cur_key = "active_jobs";
-    for item in Vec::from(check_active_jobs) {
+    for item in check_active_jobs {
         if !global_config.job_list.contains(&item) {
             return Err(_ec_error_invalid_config(cur_key));
         }
@@ -1016,7 +1006,6 @@ fn extract_config(
 /// if requested
 ///
 /// NOTE: skip errors code, see: https://github.com/BurntSushi/walkdir/blob/master/README.md
-
 fn list_files_matching(
     search_dir: &PathBuf,
     include_pattern: &str,
@@ -1028,11 +1017,11 @@ fn list_files_matching(
 ) -> Option<Vec<PathBuf>> {
     // FIXME: for now erratic patterns only cause a no-match (acceptable?)
     //        in the release version they should actually return None
-    let include_match = RegexBuilder::new(String::from(format!("^{include_pattern}$")).as_str())
+    let include_match = RegexBuilder::new(format!("^{include_pattern}$").as_str())
         .case_insensitive(!case_sensitive)
         .build()
         .unwrap_or(RE_MATCH_NO_FILE.clone());
-    let exclude_match = RegexBuilder::new(String::from(format!("^{exclude_pattern}$")).as_str())
+    let exclude_match = RegexBuilder::new(format!("^{exclude_pattern}$").as_str())
         .case_insensitive(!case_sensitive)
         .build()
         .unwrap_or(RE_MATCH_NO_FILE.clone());
@@ -1044,7 +1033,7 @@ fn list_files_matching(
     let ps = if cfg!(windows) { "\\" } else { "/" };
     let psre = format!("\\{ps}");
     let excludedir_match =
-        RegexBuilder::new(String::from(format!("{psre}{excludedir_pattern}{psre}")).as_str())
+        RegexBuilder::new(format!("{psre}{excludedir_pattern}{psre}").as_str())
             .case_insensitive(!case_sensitive)
             .build()
             .unwrap_or(RE_MATCH_NO_FILE.clone());
@@ -1112,7 +1101,6 @@ fn list_files_matching(
 ///     follow_symlinks: follow symbolic links
 ///     create_directories: create directory if it does not exist yet
 ///     trash_on_overwrite: to send to garbage bin instead of overwriting
-
 fn copy_file(
     source: &PathBuf,
     destination: &PathBuf,
@@ -1271,7 +1259,6 @@ fn copy_file(
 ///     destination: the full specification of destination file
 ///     follow_symlinks: follow symbolic links
 ///     trash_on_delete: to send to garbage bin instead of deleting
-
 fn remove_file(destination: &PathBuf, follow_symlinks: bool, trash_on_delete: bool) -> Outcome {
     // normalize paths
     let destination_path = PathBuf::from(&destination.canonicalize().unwrap_or(PathBuf::new()));
@@ -1327,7 +1314,6 @@ fn remove_file(destination: &PathBuf, follow_symlinks: bool, trash_on_delete: bo
 ///
 /// As internal functions it also includes simple formatters for writing
 /// suitable messages when needed.
-
 fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> Outcome {
     // local helpers:
 
@@ -1337,8 +1323,8 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
         job: &str,
         operation: &str,
         code: u64,
-        source: &PathBuf,
-        destination: &PathBuf,
+        source: &Path,
+        destination: &Path,
     ) -> String {
         if parsable_output {
             format_output_parsable(
@@ -1356,25 +1342,28 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                         format!(
                             "copied in job {job}: {} => {}",
                             source.display(),
-                            destination.display()
+                            destination.display(),
                         )
                     } else {
                         format!(
                             "error in job {job}: '{}' while copying {} => {}",
                             format_err_verbose(code),
                             source.display(),
-                            destination.display()
+                            destination.display(),
                         )
                     }
                 }
                 OPERATION_JOB_DEL => {
                     if code == 0 {
-                        format!("removed in job {job}: {}", destination.display())
+                        format!(
+                            "removed in job {job}: {}",
+                            destination.display(),
+                        )
                     } else {
                         format!(
                             "error in job {job}: '{}' while removing {}",
                             format_err_verbose(code),
-                            destination.display()
+                            destination.display(),
                         )
                     }
                 }
@@ -1523,7 +1512,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                     PathBuf::from(&item.file_name().unwrap_or(&std::ffi::OsStr::new("")))
                         .to_path_buf()
                 };
-                if destfile_relative.as_os_str().len() > 0 {
+                if !destfile_relative.as_os_str().is_empty() {
                     let destfile_absolute = destination.join(destfile_relative);
                     // now that the destination path is known, check
                     // whether the list of matching files to delete
@@ -1693,7 +1682,6 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
 ///
 /// As internal functions it also includes simple formatters for writing
 /// suitable messages when needed.
-
 fn run_jobs(
     global_config: &CopyJobGlobalConfig,
     job_configs: &Vec<CopyJobConfig>,
@@ -1703,14 +1691,7 @@ fn run_jobs(
     // l1. format a message (both machine readable and verbose output)
     fn _format_message_rj(parsable_output: bool, job: &str, code: u64) -> String {
         if parsable_output {
-            format_output_parsable(
-                CONTEXT_TASK,
-                job,
-                code,
-                OPERATION_JOB_END,
-                &String::new(),
-                &String::new(),
-            )
+            format_output_parsable(CONTEXT_TASK, job, code, OPERATION_JOB_END, "", "")
         } else {
             if code == 0 {
                 format!("job {job} completed successfully")
@@ -1801,14 +1782,7 @@ fn main() -> std::io::Result<()> {
             }
             _ => {
                 if parsable_output {
-                    format_output_parsable(
-                        CONTEXT_MAIN,
-                        name,
-                        ERR_OK,
-                        operation,
-                        msg_parsable,
-                        &String::new(),
-                    )
+                    format_output_parsable(CONTEXT_MAIN, name, ERR_OK, operation, msg_parsable, "")
                 } else {
                     format!("info: {msg_verbose}")
                 }
@@ -1839,20 +1813,12 @@ fn main() -> std::io::Result<()> {
                     _format_message_main(
                         args.parsable_output,
                         OPERATION_CONFIG,
-                        &global
-                            .config_file
-                            .as_os_str()
-                            .to_str()
-                            .unwrap_or(&String::new()),
+                        &global.config_file.as_os_str().to_str().unwrap_or(""),
                         None,
-                        &String::new(),
+                        "",
                         &format!(
                             "using configuration file {}",
-                            global
-                                .config_file
-                                .as_os_str()
-                                .to_str()
-                                .unwrap_or(&String::new())
+                            global.config_file.as_os_str().to_str().unwrap_or(""),
                         ),
                     )
                 );
@@ -1866,7 +1832,7 @@ fn main() -> std::io::Result<()> {
                             _format_message_main(
                                 args.parsable_output,
                                 OPERATION_MAIN_END,
-                                &String::new(),
+                                "",
                                 None,
                                 &format_err_parsable(ERR_OK),
                                 &format_err_verbose(ERR_OK),
@@ -1882,7 +1848,7 @@ fn main() -> std::io::Result<()> {
                             _format_message_main(
                                 args.parsable_output,
                                 OPERATION_MAIN_END,
-                                &String::new(),
+                                "",
                                 Some(e),
                                 &format_err_parsable(ERR_GENERIC),
                                 &format_err_verbose(ERR_GENERIC),
@@ -1900,7 +1866,7 @@ fn main() -> std::io::Result<()> {
                     _format_message_main(
                         args.parsable_output,
                         OPERATION_MAIN_END,
-                        &String::new(),
+                        "",
                         Some(e),
                         &format_err_parsable(ERR_INVALID_CONFIG_FILE),
                         &format_err_verbose(ERR_INVALID_CONFIG_FILE),
@@ -1911,5 +1877,6 @@ fn main() -> std::io::Result<()> {
         }
     }
 }
+
 
 // end.
