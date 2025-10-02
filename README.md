@@ -1,52 +1,21 @@
 # **copyjob**
 
 
-A simple utility to perform complex copy operations according to directives
-provided in a TOML configuration file. Each configuration file can contain
-instructions for several copy operations, and the parameters may vary for
-each operation defined in the configuration: such parameters can be defined
-globally in the TOML file and overridden partially or totally in each job.
+This is a small utility that can perform complex file copy operations according to directives provided in a TOML configuration file. Each configuration file can contain instructions for several copy operations, and the parameters may vary for each operation defined in the configuration: such parameters can be defined globally in the TOML file and overridden partially or totally in each job.
 
-Jobs are related to a source directory and a destination: it is possible to
-create the destination path if it doesn't exist, and to recreate totally or
-partially the source structure at the destination. Jobs can be instructed to
-selectively copy files, according to criteria specified in the configuration:
-such criteria include file name patterns for both inclusion and exclusion,
-checking file age and/or contents compared to a possibly existing destination
-file, and subdirectories to skip. A job can also remove files existing in the
-destination directory if they match the naming criteria given for the source
-and are not present in the source directory.
+Jobs are related to a source directory and a destination: it is possible to create the destination path if it doesn't exist, and to recreate totally or partially the source structure at the destination. Jobs can be instructed to selectively copy files, according to criteria specified in the configuration: such criteria include file name patterns for both inclusion and exclusion, checking file age and/or contents compared to a possibly existing destination file, and subdirectories to skip. A job can also remove files existing in the destination directory if they match the naming criteria given for the source and are not present in the source directory.
 
-The file name patterns are specified as *regular expressions* in the TOML
-configuration file, as this gives more granularity while specifying what has
-to be chosen and what to skip, compared to the wildcard semantics found in
-most shells. Patterns are provided as lists of regular expression strings,
-so that matching any of the list items is considered a good match for the
-given condition.
+The file name patterns are specified as *regular expressions* in the TOML configuration file, as this gives more granularity while specifying what has to be chosen and what to skip, compared to the wildcard semantics found in most shells. Patterns are provided as lists of regular expression strings, so that matching any of the list items is considered a good match for the given condition.
 
-For a description of TOML as a configuration file language, see the language
-[specification](https://toml.io/), and for a description of regular expression
-syntax and semantics, see
-[Wikipedia](https://en.wikipedia.org/wiki/Regular_expression);
-there are many useful tutorial around about *RE*s, and also many syntax
-checkers and interactive tools to test patterns before using them in real
-life cases such as **copyjob** jobs.
+For a description of TOML as a configuration file language, see the language [specification](https://toml.io/), and for a description of regular expression syntax and semantics, see [Wikipedia](https://en.wikipedia.org/wiki/Regular_expression); there are many useful tutorial around about *RE*s, and also many syntax checkers and interactive tools to test patterns before using them in real life cases such as **copyjob** jobs.
 
-
-## Disclaimer
-
-This software is in early development stage. It works as expected in the use
-cases that I have been able to experiment, but it can behave in unexpected
-ways in cases not covered by my own tests. It should not destroy any contents
-in the source directories, however files in destination directories may be
-overwritten or deleted without notice: use it with caution, possibly after a
-backup.
+> [!CAUTION]
+> This software is in early development stage. It works as expected in the use cases that I have been able to experiment, but it can behave in unexpected ways in cases not covered by my own tests. It should not destroy any contents in the source directories, however files in destination directories may be overwritten or deleted without notice: use it with caution, possibly after a backup.
 
 
 ## Usage
 
-**copyjob** can be invoked from the command line. By typing `copyjob --help` at
-the prompt, the utility will display a brief usage message:
+**copyjob** can be invoked from the command line. By typing `copyjob --help` at the prompt, the utility will display a brief usage message:
 
 ```text
 Usage: copyjob [OPTIONS] <CONFIG>
@@ -61,25 +30,23 @@ Options:
   -V, --version          Print version
 ```
 
-The command called with `--quiet` or `-q` as parameter, followed by the
-configuration file path, will only exit with an *error* value in case of
-unrecoverable errors, and when invoked with the `--parsable-output` or `-p`
-parameter will produce output in JSON format, that would be easier for another
-program to parse, although more difficult for a human to read. The basic
-invocation is
+The command called with `--quiet` or `-q` as parameter, followed by the configuration file path, will only exit with an *error* value in case of unrecoverable errors, and when invoked with the `--parsable-output` or `-p` parameter will produce output in JSON format, that would be easier for another program to parse, although more difficult for a human to read. The basic invocation is
 
 ```sh
 copyjob path/to/config.toml
 ```
 
-which will read the file `path/to/config.toml` and perform the jobs that the
-user defined and activated there, producing a readable (yet messy) output.
+which will read the file `path/to/config.toml` and perform the jobs that the user defined and activated there, producing a readable (yet messy) output.
 
 
-## An example of configuration file
+## Configuration
 
-In order to understand what **copyjob** can do, let's provide a simple example
-of a working configuration file:
+Configuration files for **copyjob** are standard TOML files which generally consist of two sections each, that is, a *global* section which defines the list of jobs to be performed, the default values for job related parameters, and some configuration *variables*, that is, values that can be used as placeholders in path parameters throughout the configuration. The detail below better describes how **copyjob** configuration files are structured.
+
+
+### An example of configuration file
+
+In order to understand what **copyjob** can do, let's provide a simple example of a working configuration file:
 
 ```toml
 # sample configuration file
@@ -120,63 +87,26 @@ recursive = false
 # end.
 ```
 
-This very simple configuration file defines two different jobs that **copyjob**
-will be able to perform:
+This very simple configuration file defines two different jobs that **copyjob** will be able to perform:
 
-1. *Reports*: will copy Word&trade;, Excel&trade; and PDF files whose names
-   begin with the word *Report* followed by an underscore and any other
-   characters: the job will copy both old and new Word and Excel files (the
-   *RE* states that the *x* at the end is optional); this job walks through
-   subdirectories, but any matching files found in the subdirectories will be
-   copied in the destination folder without recreating the source directory
-   structure,
-2. *CurrentSummary*: will copy all the PowerPoint&trade; presentations,
-   created with either older or recent editions of PowerPoint, whose file name
-   is *Current Summary* followed by a space and a version number with no dots
-   in it; this job will ignore all subdirectories of the source folder.
+1. *Reports*: will copy Word&trade;, Excel&trade; and PDF files whose names begin with the word *Report* followed by an underscore and any other characters: the job will copy both old and new Word and Excel files (the *RE* states that the *x* at the end is optional); this job walks through subdirectories, but any matching files found in the subdirectories will be copied in the destination folder without recreating the source directory structure,
+2. *CurrentSummary*: will copy all the PowerPoint&trade; presentations, created with either older or recent editions of PowerPoint, whose file name is *Current Summary* followed by a space and a version number with no dots in it; this job will ignore all subdirectories of the source folder.
 
-Both jobs start searching in the *Documents/MyData* subfolder of the user home:
-this is achieved by using the `HOME` environment variable (it only works on
-UNIX-like systems, unless `HOME` is properly defined); also, the destination
-is in both cases a subfolder of the *CloudSync/SyncedDocs* folder that might
-or might not exist in the same user home directory. Because of the default
-configuration of **copyjob**, the appropriate destination folders are created
-by the utility itself in case they are not found.
+Both jobs start searching in the *Documents/MyData* subfolder of the user home: this is achieved by using the `HOME` environment variable (it only works on UNIX-like systems, unless `HOME` is properly defined); also, the destination is in both cases a subfolder of the *CloudSync/SyncedDocs* folder that might or might not exist in the same user home directory. Because of the default configuration of **copyjob**, the appropriate destination folders are created by the utility itself in case they are not found.
 
-At the global level we instruct **copyjob** to treat file names as case
-insensitive, to make sure we don't miss files that could have be named
-slightly differently on operating systems such as Windows. Also, we define
-a couple of placeholders to use in source and destination directories in
-order to easily change the configuration of all jobs simultaneously in
-case the source or the target changes: for example, if the destination
-directory for all jobs changes to */cloud/Synced*, it's easy to modify the
-local variable `DEST_BASE` to `"/cloud/Synced"`, so that all the defined
-jobs that mention this variable (in this case, both) change accordingly.
+At the global level we instruct **copyjob** to treat file names as case insensitive, to make sure we don't miss files that could have be named slightly differently on operating systems such as Windows. Also, we define a couple of placeholders to use in source and destination directories in order to easily change the configuration of all jobs simultaneously in case the source or the target changes: for example, if the destination directory for all jobs changes to */cloud/Synced*, it's easy to modify the
+local variable `DEST_BASE` to `"/cloud/Synced"`, so that all the defined jobs that mention this variable (in this case, both) change accordingly.
 
-Although the configuration file defines two different jobs, in this case
-only one of them will be performed, that is *Reports*: this happens
-because the *CurrentSummary* job is commented out in the `active_jobs`
-list. This is useful when some jobs have to be temporarily excluded
-especially in highly automated tasks.
+Although the configuration file defines two different jobs, in this case only one of them will be performed, that is *Reports*: this happens because the *CurrentSummary* job is commented out in the `active_jobs` list. This is useful when some jobs have to be temporarily excluded especially in highly automated tasks.
 
-Also note the system variable `HOME` in the paths (or better, in this case,
-in the local variables that are used in the source and target paths) that
-will be replaced on UNIX-like systems by the actual user home directory
-(we will see that this restriction can be overridden on Windows without
-having to explicitly define `HOME`).
+Also note the system variable `HOME` in the paths (or better, in this case, in the local variables that are used in the source and target paths) that will be replaced on UNIX-like systems by the actual user home directory (we will see that this restriction can be overridden on Windows without having to explicitly define `HOME`).
 
 A template configuration file is provided, *copyjob_template.toml*.
 
 
-## Configuration at the global level
+### Configuration at the global level
 
-Most parameters can be defined at the global level in the configuration file,
-and the values defined here are shared by all jobs. On the other hand, jobs
-can override such values partly or even totally - except for the list of active
-jobs and the local variables, which can only be defined at the global level.
-
-Overridable parameters are the following, and when omitted the corresponding
-default value will be used:
+Most parameters can be defined at the global level in the configuration file, and the values defined here are shared by all jobs. On the other hand, jobs can override such values partly or even totally - except for the list of active jobs and the local variables, which can only be defined at the global level. Overridable parameters are the following, and when omitted the corresponding default value will be used:
 
 | **Name**                 | **Default** | **Description**                                         |
 |--------------------------|-------------|---------------------------------------------------------|
@@ -193,9 +123,7 @@ default value will be used:
 | `trash_on_overwrite`     | false       | use garbage bin before overwriting (unless overridden)  |
 | `remove_others_matching` | false       | remove matching files at destination if not in source   |
 
-As said, a list of active jobs has to be defined, otherwise no job will be
-performed (although **copyjob** will not issue an error). This is done by
-defining the list:
+As said, a list of active jobs has to be defined, otherwise no job will be performed (although **copyjob** will not issue an error). This is done by defining the list:
 
 ```toml
 active_jobs = [
@@ -205,15 +133,9 @@ active_jobs = [
 ]
 ```
 
-where the jobs *name1*, *name2*, and so on *must* be defined, otherwise the
-command will exit with an error. Thanks to TOML flexible syntax, the array can
-span multiple lines - which is useful for commenting out jobs when not needed.
+where the jobs *name1*, *name2*, and so on *must* be defined, otherwise the command will exit with an error. Thanks to TOML flexible syntax, the array can span multiple lines - which is useful for commenting out jobs when not needed.
 
-The optional `[variables]` section can be used to define local variables:
-their string values replace occurrences of the pattern `%{VAR_NAME}` in source
-and destination paths (but *not* in regular expression patterns), so that the
-string `%{VAR_NAME}/path` becomes `/some/path` if `VAR_NAME` is assigned the
-value `/some`. The syntax is the following:
+The optional `[variables]` section can be used to define local variables: their string values replace occurrences of the pattern `%{VAR_NAME}` in source and destination paths (but *not* in regular expression patterns), so that the string `%{VAR_NAME}/path` becomes `/some/path` if `VAR_NAME` is assigned the value `/some`. The syntax is the following:
 
 ```toml
 [variables]
@@ -222,52 +144,18 @@ VAR2 = "/a/path/chunk"
 # ...
 ```
 
-where `VAR1`, `VAR2` and so on are alphanumeric strings that begin with an
-alphabetic character. Casing is free, and occurrences are case sensitive.
-Local variables can mention environment variables: mentioning an undefined
-variable will replace the occurrence with the empty string, thus mimicking the
-behaviour of UNIX shells. An environment variable can be mentioned in the form
-`${VAR_NAME}` both in local variables and in source and destination paths.
+where `VAR1`, `VAR2` and so on are alphanumeric strings that begin with an alphabetic character. Casing is free, and occurrences are case sensitive. Local variables can mention environment variables: mentioning an undefined variable will replace the occurrence with the empty string, thus mimicking the behaviour of UNIX shells. An environment variable can be mentioned in the form `${VAR_NAME}` both in local variables and in source and destination paths.
 
-Notice that, while it's possible to omit many parameters as said above, any
-unknown parameter in the configuration file will be considered an error, and
-cause the abortion of the operation before any job execution: the offending
-parameter is reported unless the output is suppressed.
+Moving to the garbage bin (named *Recycle Bin*, *Trash* and in other ways on different desktop environments) is supported instead of both deleting files and also overwriting, respectively setting the `trash_on_delete` flag and the `trash_on_overwrite` flag to `true` (`trash_on_delete` is `true` by default). Recycling instead of removing or overwriting is actually *attempted*, and if it fails the destination is respectively deleted or overwritten anyway if the respective options are turned on. When overwriting, a file is only moved to the garbage bin when it is supposed to be overwritten - thus not when other conditions (such as age or contents checking) fail.
 
-Moving to the garbage bin (named *Recycle Bin*, *Trash* and in other ways on
-different desktop environments) is supported instead of both deleting files
-and also overwriting, respectively setting the `trash_on_delete` flag and the
-`trash_on_overwrite` flag to `true` (`trash_on_delete` is `true` by default).
-Recycling instead of removing or overwriting is actually *attempted*, and if
-it fails the destination is respectively deleted or overwritten anyway if the
-respective options are turned on. When overwriting, a file is only moved to
-the garbage bin when it is supposed to be overwritten - thus not when other
-conditions (such as age or contents checking) fail.
+A special mention is due for `remove_others_matching`: when set to `true`, the files that match the job *RE* specifications and do not exist in the source directories are *removed* on the destination directory. This still yields when copy operations from the source to the destination do not succeed for any reason. The rationale behind this choice is, that an user that turns that particular parameter on would probably want to clean up the folders at the destination from unnecessary files, even when there are versions of the source documents (for example newer) that cause the copy operation to fail.
 
-A special mention is due for `remove_others_matching`: when set to `true`, the
-files that match the job *RE* specifications and do not exist in the source
-directories are *removed* on the destination directory. This still yields when
-copy operations from the source to the destination do not succeed for any
-reason. The rationale behind this choice is, that an user that turns that
-particular parameter on would probably want to clean up the folders at the
-destination from unnecessary files, even when there are versions of the source
-documents (for example newer) that cause the copy operation to fail.
-
-Also, note that if a flat destination is chosen (`keep_structure = false`) and
-the job is set to walk subdirectories (`recursive = true`), the result might
-be unexpected when a file with the same name is found in the main directory
-and/or in subdirectories: which file will be copied depends on the order in
-which the OS traverses subdirectories, and which one of the homonymous source
-files is older in case only newer files are set to be replicated.
+Also, note that if a flat destination is chosen (`keep_structure = false`) and the job is set to walk subdirectories (`recursive = true`), the result might be unexpected when a file with the same name is found in the main directory and/or in subdirectories: which file will be copied depends on the order in which the OS traverses subdirectories, and which one of the homonymous source files is older in case only newer files are set to be replicated.
 
 
-## Configuration of jobs
+### Configuration of jobs
 
-Each job is introduced by the string `[[job]]` on a single line (the double
-square bracket is the TOML idiom for arrays of mappings), always followed at
-least by the mandatory parameters, namely `name`, `source`, `destination`, and
-`patterns_include`. Many parameters are the same listed above for global
-configuration. The detailed list follows:
+Each job is introduced by the string `[[job]]` on a single line (the double square bracket is the TOML idiom for arrays of mappings), always followed at least by the mandatory parameters, namely `name`, `source`, `destination`, and `patterns_include`. Many parameters are the same listed above for global configuration. The detailed list follows:
 
 | **Name**                 | **Default** | **Description**                                       |
 |--------------------------|-------------|-------------------------------------------------------|
@@ -290,84 +178,69 @@ configuration. The detailed list follows:
 | `trash_on_overwrite`     | false       | use garbage bin before overwriting                    |
 | `remove_others_matching` | false       | remove matching files at destination if not in source |
 
-The `patterns_exclude` and `patterns_exclude_dir` parameters are *optional*,
-and when specified will respectively skip files that match `patterns_include`
-but *also* match `patterns_exclude`, and skip subdirectories whose names match
-`patterns_exclude_dir` in case `recursive` is set to `true`. For instance, if
-all subdirectories whose names begin with *ARCHIVE_* have to be skipped, the
-job will contain the following definition:
+> [!NOTE]
+> While it is possible to omit many parameters as said above, any *undefined* parameter in the configuration file will be considered an error, and cause the abortion of the operation before any job execution: the offending parameter is reported unless the output is suppressed.
+
+The `patterns_exclude` and `patterns_exclude_dir` parameters are *optional*, and when specified will respectively skip files that match `patterns_include` but *also* match `patterns_exclude`, and skip subdirectories whose names match `patterns_exclude_dir` in case `recursive` is set to `true`. For instance, if all subdirectories whose names begin with *ARCHIVE_* have to be skipped, the job will contain the following definition:
 
 ```toml
 patterns_exclude_dir = [ 'ARCHIVE_.*' ]
 ```
 
-since the *pattern_** parameters only accept lists as their values.
+since the *pattern_...* parameters only accept lists as their values.
 
-All other (boolean) parameters are *optional*, and when omitted will carry
-their default value, or the value defined at global level if present.
+All other (boolean) parameters are *optional*, and when omitted will carry their default value, or the value defined at global level if present.
 
-Notice that **copyjob** is strict on job names format (for no actual reason),
-only accepting alphanumeric names that begin with a letter; job names can
-contain underscores. Both upper and lower case letters can be used, however
-job names are *always* case sensitive.
+Notice that **copyjob** is strict on job names format (for no actual reason), only accepting alphanumeric names that begin with a letter; job names can contain underscores. Both upper and lower case letters can be used, however job names are *always* case sensitive.
 
 
 ### Use of slashes in directories
 
-Slashes are universally intended as path level separators. On UNIX-like
-systems, the forward slash is used and Windows normally uses the backslash.
-**copyjob** supports both forward and back slashes on Windows, while on
-UNIX-like systems only the forward slash is accepted. On Windows all the
-forward slashes are converted to backslashes in the output (and in the actual
-file operations).
+Slashes are universally intended as path level separators. On UNIX-like systems, the forward slash is used and Windows normally uses the backslash. **copyjob** supports both forward and back slashes on Windows, while on UNIX-like systems only the forward slash is accepted. On Windows all the forward slashes are converted to backslashes in the output (and in the actual file operations).
 
 
 ### Special directory markers
 
-In the `source` and `destination` directory specifications, two predefined
-markers can be used:
+In the `source` and `destination` directory specifications, two predefined markers can be used:
 
 | **Marker** | **Meaning**                                           |
 |------------|-------------------------------------------------------|
 | `~/`       | the user home directory                               |
 | `@/`       | the directory where the configuration file is located |
 
-*at the beginning* of the path specification. So, if we run copyjob with
-*/tmp/copyjob.toml* as an argument and the source directory specification is
-`@/some/path`, the actual source directory will be expanded to
-`/tmp/some/path`. These special markers can also be used in local variables,
-as long as the local variables are mentioned at the beginning of directory
-specifications: markers in positions different from the beginning will be
-ignored.
+*at the beginning* of the path specification. So, if we run copyjob with */tmp/copyjob.toml* as an argument and the source directory specification is `@/some/path`, the actual source directory will be expanded to `/tmp/some/path`. These special markers can also be used in local variables, as long as the local variables are mentioned at the beginning of directory specifications: markers in positions different from the beginning will be ignored.
 
 On Windows the slash can be replaced by a backslash.
 
 
 ## Output of **copyjob**
 
-**copyjob** produces a quite verbose output, that can be used for logging. For
-each job, summary lines will be written to the console reporting the number
-of files to copy, the number of files that might have to be deleted (that is,
-whose names in the destination directory match the source patterns), and at the
-end it will report the numbers of actually copied and/or deleted files. While
-executing the job, **copyjob** reports each attempted copy operation mentioning
-the full paths of the source and the destination files, as well as whether or
-not the copy operation was successful.
+**copyjob** produces a quite verbose output, that can be used for logging. For each job, summary lines will be written to the console reporting the number of files to copy, the number of files that might have to be deleted (that is, whose names in the destination directory match the source patterns), and at the end it will report the numbers of actually copied and/or deleted files. While executing the job, **copyjob** reports each attempted copy operation mentioning the full paths of the source and the destination files, as well as whether or not the copy operation was successful.
 
-The output can be somewhat confusing, and it might be useful to redirect it
-to a file in complex or long tasks. Errors are written to *stderr*, so it is
-probably appropriate to redirect *stderr* to *stdout* for logging.
+The output can be somewhat confusing, and it might be useful to redirect it to a file in complex or long tasks. Errors are written to *stderr*, so it is probably appropriate to redirect *stderr* to *stdout* for logging. A compact JSON output can be produced, easier to parse for other programs: although **copyjob** is suitable to be used directly from the CLI, it can be wrapped into a more user-friendly tool, be it still CLI oriented or providing a GUI.
 
-A compact JSON output can be produced, easier to parse for other programs:
-although **copyjob** is suitable to be used directly from the CLI, it can be
-wrapped into a more user-friendly tool, be it still CLI oriented or providing
-a GUI.
+
+## A possible use scenario
+
+The way I use **copyjob** is, for some of the subdirectories in a certain tree, to perform some jobs which are configured on a per-directory basis. In order to do this, I simply edit a *copyjob_XXXX.toml* file in each directory where I want **copyjob** to operate, and then invoke the utility on each of these files: thanks to the `@/` marker it is possible to construct jobs that are applied to the directory where the configuration file is found, in a generic way that allows to reuse most of the configuration when the actions to perform are similar. **copyjob** is called on each of these files using the `find` command on Unix and the `Get-ChildItem . -Recurse` Powershell cmdlet on Windows, as follows:
+
+* **on Unix**
+
+  ```shell
+  find . -name "copyjob_*.toml"  -exec copyjob {} \;
+  ```
+
+* **on Windows**
+
+  ```powershell
+  Get-ChildItem . -Recurse -Filter "copyjob_*.toml" | % { copyjob "$_" }
+  ```
+
+You might want to redirect *stdout* and *stderr* to a log file, especially if these actions are automated.
 
 
 ## License
 
-This utility is released under the GNU LGPL v3. It is free to use and to modify
-for everyone, as long as the modified source is made available under the same
-license terms.
+This utility is released under the GNU LGPL v3. It is free to use and to modify for everyone, as long as the modified source is made available under the same license terms.
 
 See the included LICENSE.txt file for details.
