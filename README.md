@@ -119,7 +119,7 @@ Most parameters can be defined at the global level in the configuration file, an
 | `create_directories`     | true        | create directory structure if missing                   |
 | `keep_structure`         | true        | keep subdirectory structure, otherwise flat             |
 | `halt_on_errors`         | false       | halt each job upon first error (unless overridden)      |
-| `trash_on_delete`        | false       | use garbage bin instead of deleting (unless overridden) |
+| `trash_on_delete`        | true        | use garbage bin instead of deleting (unless overridden) |
 | `trash_on_overwrite`     | false       | use garbage bin before overwriting (unless overridden)  |
 | `remove_others_matching` | false       | remove matching files at destination if not in source   |
 
@@ -174,7 +174,7 @@ Each job is introduced by the string `[[job]]` on a single line (the double squa
 | `create_directories`     | true        | create directory structure if missing                 |
 | `keep_structure`         | true        | keep subdirectory structure, otherwise flat           |
 | `halt_on_errors`         | false       | halt operations upon first error in this job          |
-| `trash_on_delete`        | false       | use garbage bin instead of deleting                   |
+| `trash_on_delete`        | true        | use garbage bin instead of deleting                   |
 | `trash_on_overwrite`     | false       | use garbage bin before overwriting                    |
 | `remove_others_matching` | false       | remove matching files at destination if not in source |
 
