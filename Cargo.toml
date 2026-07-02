@@ -6,19 +6,19 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-time = "0.3.17"
-regex = "1.7.1"
-fs_extra = "1.2.0"
-trash = "5.2.3"
-dirs = "6.0.0"
-sha2 = "0.10.2"
-data-encoding = "2.3.2"
-lazy_static = "1.4.0"
-walkdir = "2.3.2"
-toml = "0.9.7"
-serde_json = "1.0.95"
-cfgmap = { version = "0.4.0", features = ["from_toml"] }
-clap = { version = "4.1.4", features = ["derive"] }
+time = "0.3"
+regex = "1.7"
+fs_extra = "1.2"
+trash = "5.2"
+dirs = "6.0"
+sha2 = "0.11"
+data-encoding = "2.3"
+lazy_static = "1.5"
+walkdir = "2.3"
+toml = "1.1"
+serde_json = "1.0"
+cfgmap = { version = "0.4", features = ["from_toml"] }
+clap = { version = "4.1", features = ["derive"] }
 
 [profile.release]
 strip = true        # strip executable
