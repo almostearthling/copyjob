@@ -2,9 +2,9 @@
 /// An utility to perform complex copy operations based on TOML files
 /// (c) 2023, Francesco Garosi
 use std::fs;
+use std::fs::File;
 use std::fs::create_dir_all;
 use std::fs::metadata;
-use std::fs::File;
 
 use std::env;
 use std::io::BufReader;
@@ -935,14 +935,14 @@ fn extract_config(
                                 job.keep_structure = *item.as_bool().unwrap();
                             }
                             "trash_on_delete" => {
-                                let cur_key = "job/halt_on_errors";
+                                let cur_key = "job/trash_on_delete";
                                 if !item.is_bool() {
                                     return Err(_ec_error_invalid_config(cur_key));
                                 }
                                 job.trash_on_delete = *item.as_bool().unwrap();
                             }
                             "trash_on_overwrite" => {
-                                let cur_key = "job/halt_on_errors";
+                                let cur_key = "job/trash_on_overwrite";
                                 if !item.is_bool() {
                                     return Err(_ec_error_invalid_config(cur_key));
                                 }
@@ -1240,9 +1240,7 @@ fn copy_file(
                 }
             }
         }
-        Err(_) => {
-            Outcome::Error(FOERR_SOURCE_NOT_ACCESSIBLE)
-        }
+        Err(_) => Outcome::Error(FOERR_SOURCE_NOT_ACCESSIBLE),
     }
 }
 
@@ -1279,9 +1277,7 @@ fn remove_file(destination: &Path, follow_symlinks: bool, trash_on_delete: bool)
                 Outcome::Error(FOERR_DESTINATION_NOT_ACCESSIBLE)
             }
         }
-        Err(_) => {
-            Outcome::Error(FOERR_DESTINATION_NOT_ACCESSIBLE)
-        }
+        Err(_) => Outcome::Error(FOERR_DESTINATION_NOT_ACCESSIBLE),
     }
 }
 
