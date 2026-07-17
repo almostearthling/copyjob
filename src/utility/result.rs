@@ -70,7 +70,8 @@ pub fn code_to_str_readable(code: i64) -> &'static str {
 }
 
 // types of specific errors: coming from another crate, all this variety might
-// be overkill - TODO: optimize after refactoring
+// be overkill
+// TODO: optimize after refactoring
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub enum Kind {

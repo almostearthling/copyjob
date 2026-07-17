@@ -1,6 +1,7 @@
-/// copyjob
-/// An utility to perform complex copy operations based on TOML files
-/// (c) 2023, Francesco Garosi
+//! copyjob
+//! An utility to perform complex copy operations based on TOML files
+//! (c) 2023-2026, Francesco Garosi
+
 use std::fs;
 use std::fs::File;
 use std::fs::create_dir_all;
@@ -81,16 +82,6 @@ struct CopyJobGlobalConfig {
     parsable_output: bool, // provide machine-readable output
 }
 
-// Holds a result for file op to be choosen among the following ones: it
-// does not contain the word Result in the definition as it is not related
-// to the plethora of *::Result outcomes used in Rust (though it indicates
-// either Success or a specified error)
-#[derive(Debug)]
-enum Outcome {
-    Success,
-    Error(i64), // will report a code from the following list
-}
-
 // Some constants used within the code
 lazy_static! {
     // directory markers: any of the values in respective lists, when
@@ -142,23 +133,6 @@ fn sha256_digest(path: &Path) -> std::io::Result<String> {
     };
     Ok(HEXLOWER.encode(digest.as_ref()))
 }
-
-// Helpers to simply convert an error code to text
-// fn format_err_parsable(code: i64) -> String {
-//     if ERRS_PARSABLE.contains_key(&code) {
-//         String::from(ERRS_PARSABLE[&code])
-//     } else {
-//         String::from(ERRS_PARSABLE[&ERR_CODE_GENERIC])
-//     }
-// }
-
-// fn format_err_verbose(code: i64) -> String {
-//     if ERRS_VERBOSE.contains_key(&code) {
-//         String::from(ERRS_VERBOSE[&code])
-//     } else {
-//         String::from(ERRS_VERBOSE[&ERR_CODE_GENERIC])
-//     }
-// }
 
 // helper to format a parsable output line consistently
 fn format_output_parsable(
@@ -435,25 +409,23 @@ fn extract_config(
 
     // 2. HashMap of local variables (being a map this case has no shortcut)
     let cur_key = "variables";
-    if config_map.contains_key(cur_key) {
-        let cur_item = config_map.get(cur_key);
-        if !cur_item.check_that(IsMap) {
-            return Err(_ec_error_invalid_config(cur_key));
-        } else {
-            match cur_item {
-                Some(c) => {
-                    for (key, item) in c.as_map().unwrap().iter() {
-                        if !item.is_str() {
-                            return Err(_ec_error_invalid_config(cur_key));
-                        }
-                        global_config.variables.insert(
-                            String::from(key.as_str()),
-                            String::from(item.as_str().unwrap()),
-                        );
+    let cur_item = config_map.get(cur_key);
+    if !cur_item.check_that(IsMap) {
+        return Err(_ec_error_invalid_config(cur_key));
+    } else {
+        match cur_item {
+            Some(c) => {
+                for (key, item) in c.as_map().unwrap().iter() {
+                    if !item.is_str() {
+                        return Err(_ec_error_invalid_config(cur_key));
                     }
+                    global_config.variables.insert(
+                        String::from(key.as_str()),
+                        String::from(item.as_str().unwrap()),
+                    );
                 }
-                None => { /* OK to go, default already set */ }
             }
+            None => { /* OK to go, default already set */ }
         }
     }
 
@@ -749,7 +721,7 @@ fn copy_file(
     follow_symlinks: bool,
     create_directories: bool,
     trash_on_overwrite: bool,
-) -> Outcome {
+) -> Result<()> {
     // normalize paths
     let source_path = PathBuf::from(&source.canonicalize().unwrap_or_default());
     let destination_path = PathBuf::from(
@@ -769,14 +741,26 @@ fn copy_file(
         Ok(s_stat) => {
             // first check that source <> destination
             if source_path == destination_path {
-                return Outcome::Error(FOERR_DESTINATION_IS_ITSELF);
+                return Err(Error::new(
+                    Kind::Invalid,
+                    FOERR_DESTINATION_IS_ITSELF,
+                    code_to_str_readable(FOERR_DESTINATION_IS_ITSELF),
+                ));
             }
             if s_stat.is_dir() {
-                return Outcome::Error(FOERR_SOURCE_IS_DIR);
+                return Err(Error::new(
+                    Kind::Invalid,
+                    FOERR_SOURCE_IS_DIR,
+                    code_to_str_readable(FOERR_SOURCE_IS_DIR),
+                ));
             }
             if s_stat.is_symlink() && !follow_symlinks {
                 // TODO: is it expected?
-                return Outcome::Error(FOERR_SOURCE_IS_SYMLINK);
+                return Err(Error::new(
+                    Kind::Forbidden,
+                    FOERR_SOURCE_IS_SYMLINK,
+                    code_to_str_readable(FOERR_SOURCE_IS_SYMLINK),
+                ));
             }
             match metadata(&destination_path) {
                 Ok(d_stat) => {
@@ -784,27 +768,51 @@ fn copy_file(
                     // whether overwrite is false, compare s_stat, d_stat and
                     // possibly hashes
                     if !overwrite {
-                        return Outcome::Error(FOERR_DESTINATION_EXISTS);
+                        return Err(Error::new(
+                            Kind::Forbidden,
+                            FOERR_DESTINATION_EXISTS,
+                            code_to_str_readable(FOERR_DESTINATION_EXISTS),
+                        ));
                     } else if d_stat.is_dir() {
-                        return Outcome::Error(FOERR_DESTINATION_IS_DIR);
+                        return Err(Error::new(
+                            Kind::Invalid,
+                            FOERR_DESTINATION_IS_DIR,
+                            code_to_str_readable(FOERR_DESTINATION_IS_DIR),
+                        ));
                     } else if d_stat.is_symlink() && !follow_symlinks {
-                        return Outcome::Error(FOERR_DESTINATION_IS_SYMLINK);
+                        return Err(Error::new(
+                            Kind::Forbidden,
+                            FOERR_DESTINATION_IS_SYMLINK,
+                            code_to_str_readable(FOERR_DESTINATION_IS_SYMLINK),
+                        ));
                     }
                     if skip_newer {
                         match s_stat.modified() {
                             Ok(s_mtime) => match d_stat.modified() {
                                 Ok(d_mtime) => {
                                     if s_mtime <= d_mtime {
-                                        return Outcome::Error(FOERR_DESTINATION_IS_NEWER);
+                                        return Err(Error::new(
+                                            Kind::Invalid,
+                                            FOERR_DESTINATION_IS_NEWER,
+                                            code_to_str_readable(FOERR_DESTINATION_IS_NEWER),
+                                        ));
                                     }
                                 }
                                 Err(_) => {
-                                    return Outcome::Error(FOERR_DESTINATION_NOT_ACCESSIBLE);
+                                    return Err(Error::new(
+                                        Kind::Unavailable,
+                                        FOERR_DESTINATION_NOT_ACCESSIBLE,
+                                        code_to_str_readable(FOERR_DESTINATION_NOT_ACCESSIBLE),
+                                    ));
                                 }
                             },
                             // should never be reached
                             Err(_) => {
-                                return Outcome::Error(FOERR_SOURCE_NOT_ACCESSIBLE);
+                                return Err(Error::new(
+                                    Kind::Unavailable,
+                                    FOERR_SOURCE_NOT_ACCESSIBLE,
+                                    code_to_str_readable(FOERR_SOURCE_NOT_ACCESSIBLE),
+                                ));
                             }
                         }
                     }
@@ -815,15 +823,27 @@ fn copy_file(
                             Ok(source_hash) => match sha256_digest(&destination_path) {
                                 Ok(destination_hash) => {
                                     if destination_hash == source_hash {
-                                        return Outcome::Error(FOERR_DESTINATION_IS_IDENTICAL);
+                                        return Err(Error::new(
+                                            Kind::Invalid,
+                                            FOERR_DESTINATION_IS_IDENTICAL,
+                                            code_to_str_readable(FOERR_DESTINATION_IS_IDENTICAL),
+                                        ));
                                     }
                                 }
                                 Err(_) => {
-                                    return Outcome::Error(FOERR_DESTINATION_NOT_ACCESSIBLE);
+                                    return Err(Error::new(
+                                        Kind::Unavailable,
+                                        FOERR_DESTINATION_NOT_ACCESSIBLE,
+                                        code_to_str_readable(FOERR_DESTINATION_NOT_ACCESSIBLE),
+                                    ));
                                 }
                             },
                             Err(_) => {
-                                return Outcome::Error(FOERR_SOURCE_NOT_ACCESSIBLE);
+                                return Err(Error::new(
+                                    Kind::Unavailable,
+                                    FOERR_SOURCE_NOT_ACCESSIBLE,
+                                    code_to_str_readable(FOERR_SOURCE_NOT_ACCESSIBLE),
+                                ));
                             }
                         }
                     }
@@ -839,12 +859,20 @@ fn copy_file(
                     //       CANNOT_CREATE_DIR error is propagated
                     let mut destination_dir = PathBuf::from(&destination_path);
                     if !destination_dir.pop() {
-                        return Outcome::Error(FOERR_CANNOT_CREATE_DIR);
+                        return Err(Error::new(
+                            Kind::Forbidden,
+                            FOERR_CANNOT_CREATE_DIR,
+                            code_to_str_readable(FOERR_CANNOT_CREATE_DIR),
+                        ));
                     }
                     match metadata(&destination_dir) {
                         Ok(d_dirdata) => {
                             if !d_dirdata.is_dir() {
-                                return Outcome::Error(FOERR_CANNOT_CREATE_DIR);
+                                return Err(Error::new(
+                                    Kind::Forbidden,
+                                    FOERR_CANNOT_CREATE_DIR,
+                                    code_to_str_readable(FOERR_CANNOT_CREATE_DIR),
+                                ));
                             }
                         }
                         Err(_) => {
@@ -853,10 +881,18 @@ fn copy_file(
                             // out on directory creation errors; otherwise it
                             // is safe to go on without further checks
                             if !create_directories {
-                                return Outcome::Error(FOERR_CANNOT_CREATE_DIR);
+                                return Err(Error::new(
+                                    Kind::Forbidden,
+                                    FOERR_CANNOT_CREATE_DIR,
+                                    code_to_str_readable(FOERR_CANNOT_CREATE_DIR),
+                                ));
                             }
                             if create_dir_all(&destination_dir).is_err() {
-                                return Outcome::Error(FOERR_CANNOT_CREATE_DIR);
+                                return Err(Error::new(
+                                    Kind::Forbidden,
+                                    FOERR_CANNOT_CREATE_DIR,
+                                    code_to_str_readable(FOERR_CANNOT_CREATE_DIR),
+                                ));
                             }
                         }
                     }
@@ -874,20 +910,31 @@ fn copy_file(
             // let res = fs::copy(&source_path, &destination_path);
             match fs::copy(&source_path, &destination_path) {
                 Ok(_) => {
-                    // FileOpOutcome::Success is returned only here, after an
-                    // actually successful copy operation
-                    Outcome::Success
+                    // success is returned only here, after anactually successful operation
+                    Ok(())
                 }
                 Err(res_err) => {
                     if res_err.kind() == std::io::ErrorKind::PermissionDenied {
-                        Outcome::Error(FOERR_DESTINATION_IS_READONLY)
+                        Err(Error::new(
+                            Kind::Forbidden,
+                            FOERR_DESTINATION_IS_READONLY,
+                            code_to_str_readable(FOERR_DESTINATION_IS_READONLY),
+                        ))
                     } else {
-                        Outcome::Error(FOERR_GENERIC_FAILURE)
+                        Err(Error::new(
+                            Kind::Unknown,
+                            ERR_CODE_GENERIC,
+                            code_to_str_readable(ERR_CODE_GENERIC),
+                        ))
                     }
                 }
             }
         }
-        Err(_) => Outcome::Error(FOERR_SOURCE_NOT_ACCESSIBLE),
+        Err(_) => Err(Error::new(
+            Kind::Unavailable,
+            FOERR_SOURCE_NOT_ACCESSIBLE,
+            code_to_str_readable(FOERR_SOURCE_NOT_ACCESSIBLE),
+        )),
     }
 }
 
@@ -897,7 +944,7 @@ fn copy_file(
 ///     destination: the full specification of destination file
 ///     follow_symlinks: follow symbolic links
 ///     trash_on_delete: to send to garbage bin instead of deleting
-fn remove_file(destination: &Path, follow_symlinks: bool, trash_on_delete: bool) -> Outcome {
+fn remove_file(destination: &Path, follow_symlinks: bool, trash_on_delete: bool) -> Result<()> {
     // normalize paths
     let destination_path = destination.canonicalize().unwrap_or_default();
 
@@ -905,26 +952,46 @@ fn remove_file(destination: &Path, follow_symlinks: bool, trash_on_delete: bool)
         Ok(d_stat) => {
             // if we are here, then destination exists
             if d_stat.is_dir() {
-                Outcome::Error(FOERR_DESTINATION_IS_DIR)
+                Err(Error::new(
+                    Kind::Invalid,
+                    FOERR_DESTINATION_IS_DIR,
+                    code_to_str_readable(FOERR_DESTINATION_IS_DIR),
+                ))
             } else if d_stat.is_symlink() && !follow_symlinks {
-                Outcome::Error(FOERR_DESTINATION_IS_SYMLINK)
+                Err(Error::new(
+                    Kind::Invalid,
+                    FOERR_DESTINATION_IS_SYMLINK,
+                    code_to_str_readable(FOERR_DESTINATION_IS_SYMLINK),
+                ))
             } else if trash_on_delete {
                 if trash::delete(&destination_path).is_err() {
                     if fs::remove_file(destination_path).is_ok() {
-                        Outcome::Success
+                        Ok(())
                     } else {
-                        Outcome::Error(FOERR_DESTINATION_NOT_ACCESSIBLE)
+                        Err(Error::new(
+                            Kind::Unavailable,
+                            FOERR_DESTINATION_NOT_ACCESSIBLE,
+                            code_to_str_readable(FOERR_DESTINATION_NOT_ACCESSIBLE),
+                        ))
                     }
                 } else {
-                    Outcome::Success
+                    Ok(())
                 }
             } else if fs::remove_file(destination_path).is_ok() {
-                Outcome::Success
+                Ok(())
             } else {
-                Outcome::Error(FOERR_DESTINATION_NOT_ACCESSIBLE)
+                Err(Error::new(
+                    Kind::Unavailable,
+                    FOERR_DESTINATION_NOT_ACCESSIBLE,
+                    code_to_str_readable(FOERR_DESTINATION_NOT_ACCESSIBLE),
+                ))
             }
         }
-        Err(_) => Outcome::Error(FOERR_DESTINATION_NOT_ACCESSIBLE),
+        Err(_) => Err(Error::new(
+            Kind::Unavailable,
+            FOERR_DESTINATION_NOT_ACCESSIBLE,
+            code_to_str_readable(FOERR_DESTINATION_NOT_ACCESSIBLE),
+        )),
     }
 }
 
@@ -947,7 +1014,7 @@ fn remove_file(destination: &Path, follow_symlinks: bool, trash_on_delete: bool)
 ///
 /// As internal functions it also includes simple formatters for writing
 /// suitable messages when needed.
-fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> Outcome {
+fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> Result<()> {
     // local helpers:
 
     // l1. format a message (both machine readable and verbose output)
@@ -1069,7 +1136,11 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                 )
             );
         }
-        return Outcome::Error(CJERR_SOURCE_DIR_NOT_EXISTS);
+        return Err(Error::new(
+            Kind::Unavailable,
+            CJERR_SOURCE_DIR_NOT_EXISTS,
+            code_to_str_readable(CJERR_SOURCE_DIR_NOT_EXISTS),
+        ));
     }
     if !job.destination_dir.exists() && !job.create_directories {
         if verbose {
@@ -1085,7 +1156,11 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                 )
             );
         }
-        return Outcome::Error(CJERR_DESTINATION_DIR_NOT_EXISTS);
+        return Err(Error::new(
+            Kind::Unavailable,
+            CJERR_DESTINATION_DIR_NOT_EXISTS,
+            code_to_str_readable(CJERR_DESTINATION_DIR_NOT_EXISTS),
+        ));
     }
 
     // build the list of files to be copied
@@ -1166,7 +1241,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                         job.create_directories,
                         job.trash_on_overwrite,
                     ) {
-                        Outcome::Success => {
+                        Ok(()) => {
                             num_files_copied += 1;
                             if verbose {
                                 println!(
@@ -1182,7 +1257,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                                 );
                             }
                         }
-                        Outcome::Error(err) => {
+                        Err(err) => {
                             if verbose {
                                 eprintln!(
                                     "{}",
@@ -1190,14 +1265,18 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                                         parsable_output,
                                         &job.job_name,
                                         OPERATION_JOB_COPY,
-                                        err,
+                                        err.code(),
                                         &item,
                                         &destfile_absolute,
                                     )
                                 );
                             }
                             if job.halt_on_errors {
-                                return Outcome::Error(CJERR_GENERIC_FAILURE);
+                                return Err(Error::new(
+                                    Kind::Failed,
+                                    CJERR_HALT_ON_COPY_ERROR,
+                                    code_to_str_readable(CJERR_HALT_ON_COPY_ERROR),
+                                ));
                             };
                         }
                     };
@@ -1216,14 +1295,18 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                         );
                     }
                     if job.halt_on_errors {
-                        return Outcome::Error(CJERR_CANNOT_DETERMINE_DESTFILE);
+                        return Err(Error::new(
+                            Kind::Failed,
+                            CJERR_HALT_ON_COPY_ERROR,
+                            code_to_str_readable(CJERR_HALT_ON_COPY_ERROR),
+                        ));
                     }
                 }
             }
             // if not remove_other_matching the vector is empty
             for item in files_to_delete {
                 match remove_file(&item, job.follow_symlinks, job.trash_on_delete) {
-                    Outcome::Success => {
+                    Ok(()) => {
                         if verbose {
                             println!(
                                 "{}",
@@ -1239,7 +1322,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                         }
                         num_files_deleted += 1;
                     }
-                    Outcome::Error(err) => {
+                    Err(err) => {
                         if verbose {
                             eprintln!(
                                 "{}",
@@ -1247,14 +1330,18 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                                     parsable_output,
                                     &job.job_name,
                                     OPERATION_JOB_DEL,
-                                    err,
+                                    err.code(),
                                     &PathBuf::new(),
                                     &item,
                                 )
                             );
                         }
                         if job.halt_on_errors {
-                            return Outcome::Error(CJERR_GENERIC_FAILURE);
+                            return Err(Error::new(
+                                Kind::Failed,
+                                CJERR_HALT_ON_COPY_ERROR,
+                                code_to_str_readable(CJERR_HALT_ON_COPY_ERROR),
+                            ));
                         };
                     }
                 }
@@ -1287,11 +1374,15 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                     )
                 );
             }
-            return Outcome::Error(CJERR_NO_SOURCE_FILES);
+            return Err(Error::new(
+                Kind::Unavailable,
+                CJERR_NO_SOURCE_FILES,
+                code_to_str_readable(CJERR_NO_SOURCE_FILES),
+            ));
         }
     }
 
-    Outcome::Success
+    Ok(())
 }
 
 /// Perform all jobs, according to the passed global config object and list
@@ -1333,7 +1424,7 @@ fn run_jobs(
     for job in job_configs {
         if global_config.active_jobs.contains(&job.job_name) {
             match run_single_job(job, global_config.verbose, global_config.parsable_output) {
-                Outcome::Success => {
+                Ok(()) => {
                     if global_config.verbose {
                         println!(
                             "{}",
@@ -1341,11 +1432,15 @@ fn run_jobs(
                         );
                     }
                 }
-                Outcome::Error(code) => {
+                Err(err) => {
                     if global_config.verbose {
                         println!(
                             "{}",
-                            _format_message_rj(global_config.parsable_output, &job.job_name, code)
+                            _format_message_rj(
+                                global_config.parsable_output,
+                                &job.job_name,
+                                err.code()
+                            )
                         );
                     }
                     if global_config.halt_on_errors {
