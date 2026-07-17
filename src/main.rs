@@ -25,6 +25,13 @@ use data_encoding::HEXLOWER;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
+mod constants;
+mod utility;
+
+use constants::*;
+use utility::cfghelp::*;
+use utility::result::*;
+
 // Structures used for a copy job configuration and the global configuration:
 // values provided in CopyJobConfig default to the ones provided globally in
 // the CopyJobGlobalConfig object, and override them if different
@@ -84,50 +91,6 @@ enum Outcome {
     Error(u64), // will report a code from the following list
 }
 
-// Values for Outcome::Error (copy_file, remove_file)
-const FOERR_GENERIC_FAILURE: u64 = 1001;
-const FOERR_DESTINATION_IS_ITSELF: u64 = 1011;
-const FOERR_DESTINATION_IS_DIR: u64 = 1012;
-const FOERR_DESTINATION_IS_SYMLINK: u64 = 1013;
-const FOERR_DESTINATION_IS_NEWER: u64 = 1014;
-const FOERR_DESTINATION_IS_IDENTICAL: u64 = 1015;
-const FOERR_DESTINATION_IS_READONLY: u64 = 1016;
-const FOERR_DESTINATION_EXISTS: u64 = 1021;
-const FOERR_DESTINATION_NOT_ACCESSIBLE: u64 = 1022;
-const FOERR_CANNOT_CREATE_DIR: u64 = 1031;
-const FOERR_CANNOT_CREATE_FILE: u64 = 1032;
-const FOERR_SOURCE_NOT_EXISTS: u64 = 1041;
-const FOERR_SOURCE_IS_DIR: u64 = 1042;
-const FOERR_SOURCE_IS_SYMLINK: u64 = 1043;
-const FOERR_SOURCE_NOT_ACCESSIBLE: u64 = 1044;
-
-// values for Outcome::Error (run_single_job, run_jobs)
-const CJERR_GENERIC_FAILURE: u64 = 2001;
-const CJERR_SOURCE_DIR_NOT_EXISTS: u64 = 2011;
-const CJERR_DESTINATION_DIR_NOT_EXISTS: u64 = 2012;
-const CJERR_NO_SOURCE_FILES: u64 = 2013;
-const CJERR_CANNOT_DETERMINE_DESTFILE: u64 = 2021;
-const CJERR_HALT_ON_COPY_ERROR: u64 = 2041;
-
-// values for generic outcomes
-const ERR_OK: u64 = 0;
-const ERR_GENERIC: u64 = 9999;
-const ERR_INVALID_CONFIG_FILE: u64 = 9998;
-
-// context identifiers for output
-const CONTEXT_MAIN: &str = "MAIN";
-const CONTEXT_JOB: &str = "JOB";
-const CONTEXT_TASK: &str = "TASK";
-
-// operation identifiers for output
-const OPERATION_JOB_COPY: &str = "COPY";
-const OPERATION_JOB_DEL: &str = "DEL";
-const OPERATION_JOB_BEGIN: &str = "BEGIN_JOB";
-const OPERATION_JOB_END: &str = "END_JOB";
-// const OPERATION_MAIN_BEGIN: &str = "BEGIN_MAIN";
-const OPERATION_MAIN_END: &str = "END_MAIN";
-const OPERATION_CONFIG: &str = "CONFIG";
-
 // Some constants used within the code
 lazy_static! {
     // directory markers: any of the values in respective lists, when
@@ -173,9 +136,9 @@ lazy_static! {
         _tmap.insert(CJERR_CANNOT_DETERMINE_DESTFILE, "CJERR_CANNOT_DETERMINE_DESTFILE");
         _tmap.insert(CJERR_HALT_ON_COPY_ERROR, "CJERR_HALT_ON_COPY_ERROR");
 
-        _tmap.insert(ERR_INVALID_CONFIG_FILE, "ERR_INVALID_CONFIG");
-        _tmap.insert(ERR_GENERIC, "ERR_GENERIC");
-        _tmap.insert(ERR_OK, "OK");
+        _tmap.insert(ERR_CODE_INVALID_CONFIG_FILE, "ERR_INVALID_CONFIG");
+        _tmap.insert(ERR_CODE_GENERIC, "ERR_GENERIC");
+        _tmap.insert(ERR_CODE_OK, "OK");
         _tmap
     };
 
@@ -205,9 +168,9 @@ lazy_static! {
         _tmap.insert(CJERR_CANNOT_DETERMINE_DESTFILE, "copy job: cannot determine source");
         _tmap.insert(CJERR_HALT_ON_COPY_ERROR, "copy job: ending job after copy error");
 
-        _tmap.insert(ERR_INVALID_CONFIG_FILE, "application: invalid config file");
-        _tmap.insert(ERR_GENERIC, "application: generic failure");
-        _tmap.insert(ERR_OK, "application: operation succeeded");
+        _tmap.insert(ERR_CODE_INVALID_CONFIG_FILE, "application: invalid config file");
+        _tmap.insert(ERR_CODE_GENERIC, "application: generic failure");
+        _tmap.insert(ERR_CODE_OK, "application: operation succeeded");
         _tmap
     };
 
@@ -260,7 +223,7 @@ fn format_err_parsable(code: u64) -> String {
     if ERRS_PARSABLE.contains_key(&code) {
         String::from(ERRS_PARSABLE[&code])
     } else {
-        String::from(ERRS_PARSABLE[&ERR_GENERIC])
+        String::from(ERRS_PARSABLE[&ERR_CODE_GENERIC])
     }
 }
 
@@ -268,7 +231,7 @@ fn format_err_verbose(code: u64) -> String {
     if ERRS_VERBOSE.contains_key(&code) {
         String::from(ERRS_VERBOSE[&code])
     } else {
-        String::from(ERRS_VERBOSE[&ERR_GENERIC])
+        String::from(ERRS_VERBOSE[&ERR_CODE_GENERIC])
     }
 }
 
@@ -322,6 +285,48 @@ fn format_output_parsable(
     .to_string()
 }
 
+/// This make variables and markers replacement easier
+///
+/// Note: it only works with strings, which can be converted to `PathBuf`
+trait ReplaceableVarString {
+    fn replace_start(&self, vars: &HashMap<&str, &str>) -> Self;
+    fn replace_vars(&self, pattern: &Regex, format: &str, vars: &HashMap<&str, &str>) -> Self;
+}
+
+impl ReplaceableVarString for String {
+    fn replace_start(&self, vars: &HashMap<&str, &str>) -> Self {
+        let mut s = String::from(self);
+        for (k, v) in vars {
+            if s.starts_with(k) {
+                s = s.replace(k, v);
+                break;
+            }
+        }
+        s
+    }
+
+    fn replace_vars(&self, pattern: &Regex, format: &str, vars: &HashMap<&str, &str>) -> Self {
+        let mut result = String::from(self);
+        // mimick shell by replacing undefined variables with the empty string:
+        // since the same function is used for both local and environment vars,
+        // this represents a difference with the Python version, that considered
+        // mentioning an undefined local variable a fatal error
+        // WARNING: this actually assumes that the regular expression pattern
+        //          "[%$]\{[a-zA-Z_][a-zA-Z0-9_]*\}" cannot appear in the source or
+        //          the destination directory within job definitions
+        while let Some(caps) = pattern.captures(result.as_str()) {
+            let varname = caps.get(1).map_or("", |m| m.as_str());
+            let occurrence = format.replace("*", varname);
+            if let Some(replacement) = vars.get(varname) {
+                result = result.replace(&occurrence, replacement);
+            } else {
+                result = result.replace(&occurrence, "");
+            }
+        }
+        result
+    }
+}
+
 /// Extract the configuration from a TOML file, given the file name and the
 /// pertaining arguments as resulting from the command line. A description of
 /// the arguments follows:
@@ -340,14 +345,18 @@ fn extract_config(
     config_file: &PathBuf,
     verbose: bool,
     parsable_output: bool,
-) -> std::io::Result<(CopyJobGlobalConfig, Vec<CopyJobConfig>)> {
+) -> Result<(CopyJobGlobalConfig, Vec<CopyJobConfig>)> {
     // local helpers:
 
     // l1. create a specific error
-    fn _ec_error_invalid_config(key: &str) -> std::io::Error {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!("{}:{key}", format_err_parsable(ERR_INVALID_CONFIG_FILE)).as_str(),
+    fn _ec_error_invalid_config(key: &str) -> Error {
+        Error::new(
+            Kind::Invalid,
+            format!(
+                "{}:{key}",
+                format_err_parsable(ERR_CODE_INVALID_CONFIG_FILE)
+            )
+            .as_str(),
         )
     }
 
@@ -463,7 +472,6 @@ fn extract_config(
         parsable_output,
     };
     let mut job_configs: Vec<CopyJobConfig> = Vec::new();
-    let mut check_active_jobs: Vec<String> = Vec::new();
     let allowed_globals = vec![
         "active_jobs",
         "variables",
@@ -485,9 +493,9 @@ fn extract_config(
     let config_map = match toml::from_str(fs::read_to_string(config_file)?.as_str()) {
         Ok(toml_text) => CfgMap::from_toml(toml_text),
         _ => {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format_err_parsable(ERR_INVALID_CONFIG_FILE),
+            return Err(Error::new(
+                Kind::Invalid,
+                &format_err_parsable(ERR_CODE_INVALID_CONFIG_FILE),
             ));
         }
     };
@@ -503,6 +511,36 @@ fn extract_config(
     let var_user_home = home_dir().unwrap();
     let var_config_file_dir = PathBuf::from(config_file.clone().parent().unwrap());
 
+    let separator = if cfg!(windows) { "\\" } else { "/" };
+    let mut markers: HashMap<&str, String> = HashMap::new();
+    if cfg!(windows) {
+        markers.insert(
+            "~/",
+            format!("{}{separator}", var_user_home.to_string_lossy()),
+        );
+        markers.insert(
+            "@/",
+            format!("{}{separator}", var_config_file_dir.to_string_lossy()),
+        );
+        markers.insert(
+            "~\\",
+            format!("{}{separator}", var_user_home.to_string_lossy()),
+        );
+        markers.insert(
+            "@\\",
+            format!("{}{separator}", var_config_file_dir.to_string_lossy()),
+        );
+    } else {
+        markers.insert(
+            "~/",
+            format!("{}{separator}", var_user_home.to_string_lossy()),
+        );
+        markers.insert(
+            "@/",
+            format!("{}{separator}", var_config_file_dir.to_string_lossy()),
+        );
+    }
+
     let mut sys_variables: HashMap<String, String> = HashMap::new();
     for (var, value) in env::vars_os() {
         sys_variables.insert(
@@ -515,29 +553,14 @@ fn extract_config(
 
     // 1. list of active jobs (will be checked later)
     let cur_key = "active_jobs";
-    let cur_item = config_map.get(cur_key);
-    if !cur_item.check_that(IsList) {
-        return Err(_ec_error_invalid_config(cur_key));
-    } else {
-        match cur_item {
-            Some(c) => {
-                for item in c.as_list().unwrap() {
-                    if !item.is_str() {
-                        return Err(_ec_error_invalid_config(cur_key));
-                    }
-                    global_config
-                        .active_jobs
-                        .push(String::from(item.as_str().unwrap()));
-                    check_active_jobs.push(String::from(item.as_str().unwrap()));
-                }
-            }
-            None => {
-                return Err(_ec_error_invalid_config(cur_key));
-            }
-        }
-    }
+    global_config.active_jobs = cfg_mandatory!(cfg_vec_string_check_regex(
+        &config_map,
+        cur_key,
+        &RE_JOBNAME
+    ))?
+    .unwrap();
 
-    // 2. HashMap of local variables
+    // 2. HashMap of local variables (being a map this case has no shortcut)
     let cur_key = "variables";
     if config_map.contains_key(cur_key) {
         let cur_item = config_map.get(cur_key);
@@ -561,161 +584,32 @@ fn extract_config(
         }
     }
 
-    // 3. recursive flag
-    let cur_key = "recursive";
-    let cur_item = config_map.get(cur_key);
-    match cur_item {
-        Some(item) => {
-            if !item.is_bool() {
-                return Err(_ec_error_invalid_config(cur_key));
-            }
-            global_config.recursive = *item.as_bool().unwrap();
-        }
-        None => { /* OK to go, default already set */ }
-    }
-
-    // 4. case sensitivity
-    let cur_key = "case_sensitive";
-    let cur_item = config_map.get(cur_key);
-    match cur_item {
-        Some(item) => {
-            if !item.is_bool() {
-                return Err(_ec_error_invalid_config(cur_key));
-            }
-            global_config.case_sensitive = *item.as_bool().unwrap();
-        }
-        None => { /* OK to go, default already set */ }
-    }
-
-    // 5. whether or not to follow symlinks
-    let cur_key = "follow_symlinks";
-    let cur_item = config_map.get(cur_key);
-    match cur_item {
-        Some(item) => {
-            if !item.is_bool() {
-                return Err(_ec_error_invalid_config(cur_key));
-            }
-            global_config.follow_symlinks = *item.as_bool().unwrap();
-        }
-        None => { /* OK to go, default already set */ }
-    }
-
-    // 6. whether or not to overwrite destination
-    let cur_key = "overwrite";
-    let cur_item = config_map.get(cur_key);
-    match cur_item {
-        Some(item) => {
-            if !item.is_bool() {
-                return Err(_ec_error_invalid_config(cur_key));
-            }
-            global_config.overwrite = *item.as_bool().unwrap();
-        }
-        None => { /* OK to go, default already set */ }
-    }
-
-    // 7. newer version skipping
-    let cur_key = "skip_newer";
-    let cur_item = config_map.get(cur_key);
-    match cur_item {
-        Some(item) => {
-            if !item.is_bool() {
-                return Err(_ec_error_invalid_config(cur_key));
-            }
-            global_config.skip_newer = *item.as_bool().unwrap();
-        }
-        None => { /* OK to go, default already set */ }
-    }
-
-    // 8. whether to check if source == destination
-    let cur_key = "check_content";
-    let cur_item = config_map.get(cur_key);
-    match cur_item {
-        Some(item) => {
-            if !item.is_bool() {
-                return Err(_ec_error_invalid_config(cur_key));
-            }
-            global_config.check_content = *item.as_bool().unwrap();
-        }
-        None => { /* OK to go, default already set */ }
-    }
-
-    // 9. remove matching destination files
-    let cur_key = "remove_others_matching";
-    let cur_item = config_map.get(cur_key);
-    match cur_item {
-        Some(item) => {
-            if !item.is_bool() {
-                return Err(_ec_error_invalid_config(cur_key));
-            }
-            global_config.remove_others_matching = *item.as_bool().unwrap();
-        }
-        None => { /* OK to go, default already set */ }
-    }
-
-    // 10. create directory structure if not found
-    let cur_key = "create_directories";
-    let cur_item = config_map.get(cur_key);
-    match cur_item {
-        Some(item) => {
-            if !item.is_bool() {
-                return Err(_ec_error_invalid_config(cur_key));
-            }
-            global_config.create_directories = *item.as_bool().unwrap();
-        }
-        None => { /* OK to go, default already set */ }
-    }
-
-    // 11. keep source directory structure or flat
-    let cur_key = "keep_structure";
-    let cur_item = config_map.get(cur_key);
-    match cur_item {
-        Some(item) => {
-            if !item.is_bool() {
-                return Err(_ec_error_invalid_config(cur_key));
-            }
-            global_config.keep_structure = *item.as_bool().unwrap();
-        }
-        None => { /* OK to go, default already set */ }
-    }
-
-    // 12. halt on errors or continue
-    let cur_key = "trash_on_delete";
-    let cur_item = config_map.get(cur_key);
-    match cur_item {
-        Some(item) => {
-            if !item.is_bool() {
-                return Err(_ec_error_invalid_config(cur_key));
-            }
-            global_config.trash_on_delete = *item.as_bool().unwrap();
-        }
-        None => { /* OK to go, default already set */ }
-    }
-
-    // 13. halt on errors or continue
-    let cur_key = "trash_on_overwrite";
-    let cur_item = config_map.get(cur_key);
-    match cur_item {
-        Some(item) => {
-            if !item.is_bool() {
-                return Err(_ec_error_invalid_config(cur_key));
-            }
-            global_config.trash_on_overwrite = *item.as_bool().unwrap();
-        }
-        None => { /* OK to go, default already set */ }
-    }
-
-    // 14. halt on errors or continue
-    let cur_key = "halt_on_errors";
-    let cur_item = config_map.get(cur_key);
-    match cur_item {
-        Some(item) => {
-            if !item.is_bool() {
-                return Err(_ec_error_invalid_config(cur_key));
-            }
-            global_config.halt_on_errors = *item.as_bool().unwrap();
-        }
-        None => { /* OK to go, default already set */ }
-    }
+    // 3. flags: booleans are retrieved using shortcuts, defaults are set above
+    // therefore they are just kept in case of a missing configuration entry
+    global_config.recursive =
+        cfg_bool(&config_map, "recursive")?.unwrap_or(global_config.recursive);
+    global_config.case_sensitive =
+        cfg_bool(&config_map, "case_sensitive")?.unwrap_or(global_config.case_sensitive);
+    global_config.follow_symlinks =
+        cfg_bool(&config_map, "follow_symlinks")?.unwrap_or(global_config.follow_symlinks);
+    global_config.overwrite =
+        cfg_bool(&config_map, "overwrite")?.unwrap_or(global_config.overwrite);
+    global_config.skip_newer =
+        cfg_bool(&config_map, "skip_newer")?.unwrap_or(global_config.skip_newer);
+    global_config.check_content =
+        cfg_bool(&config_map, "check_content")?.unwrap_or(global_config.check_content);
+    global_config.remove_others_matching = cfg_bool(&config_map, "remove_others_matching")?
+        .unwrap_or(global_config.remove_others_matching);
+    global_config.create_directories =
+        cfg_bool(&config_map, "create_directories")?.unwrap_or(global_config.create_directories);
+    global_config.keep_structure =
+        cfg_bool(&config_map, "keep_structure")?.unwrap_or(global_config.keep_structure);
+    global_config.trash_on_delete =
+        cfg_bool(&config_map, "trash_on_delete")?.unwrap_or(global_config.trash_on_delete);
+    global_config.trash_on_overwrite =
+        cfg_bool(&config_map, "trash_on_overwrite")?.unwrap_or(global_config.trash_on_delete);
+    global_config.halt_on_errors =
+        cfg_bool(&config_map, "halt_on_errors")?.unwrap_or(global_config.halt_on_errors);
 
     // collect job definitions
     // note that specific job flags are directly taken from the corresponding
@@ -730,8 +624,8 @@ fn extract_config(
             if !c.is_list() {
                 return Err(_ec_error_invalid_config(cur_key));
             }
-            for elem in c.as_list().unwrap_or(&Vec::<CfgValue>::new()).iter() {
-                if !elem.is_map() {
+            for job_entry in c.as_list().unwrap_or(&Vec::<CfgValue>::new()).iter() {
+                if !job_entry.is_map() {
                     return Err(_ec_error_invalid_config(cur_key));
                 } else {
                     let mut job = CopyJobConfig {
@@ -754,214 +648,78 @@ fn extract_config(
                         trash_on_overwrite: global_config.trash_on_overwrite,
                         halt_on_errors: global_config.halt_on_errors,
                     };
-                    for (key, item) in elem.as_map().unwrap().iter() {
-                        // a note on variable and marker replacements: first we
-                        // replace local variables, because they could mention
-                        // environment variables and/or special markers to be
-                        // replaced below, then the environment variables, as
-                        // special markers (especially '~/') could be present
-                        // therein; at last we replace the special markers
-                        match key.as_str() {
-                            "name" => {
-                                let cur_key = "job/name";
-                                if !item.is_str() {
-                                    return Err(_ec_error_invalid_config(cur_key));
-                                }
-                                job.job_name = String::from(item.as_str().unwrap());
-                                if !RE_JOBNAME.is_match(&job.job_name) {
-                                    return Err(_ec_error_invalid_config(cur_key));
-                                }
-                            }
-                            "source" => {
-                                let cur_key = "job/source";
-                                if !item.is_str() {
-                                    return Err(_ec_error_invalid_config(cur_key));
-                                }
-                                let mut s = String::from(item.as_str().unwrap());
-                                s = _ec_replace_variables_in_string(
-                                    &RE_VARMENTION_LOC,
-                                    &FMT_VARMENTION_LOC,
-                                    &s,
-                                    &global_config.variables,
-                                );
-                                s = _ec_replace_variables_in_string(
-                                    &RE_VARMENTION_ENV,
-                                    &FMT_VARMENTION_ENV,
-                                    &s,
-                                    &sys_variables,
-                                );
-                                s = _ec_replace_markers_in_string(
-                                    &s,
-                                    &var_user_home,
-                                    &var_config_file_dir,
-                                );
-                                job.source_dir = PathBuf::from(_ec_add_trailing_slashes(
-                                    &_ec_normalize_path_slashes(&s),
-                                ));
-                            }
-                            "destination" => {
-                                let cur_key = "job/destination";
-                                if !item.is_str() {
-                                    return Err(_ec_error_invalid_config(cur_key));
-                                }
-                                let mut s = String::from(item.as_str().unwrap());
-                                s = _ec_replace_variables_in_string(
-                                    &RE_VARMENTION_LOC,
-                                    &FMT_VARMENTION_LOC,
-                                    &s,
-                                    &global_config.variables,
-                                );
-                                s = _ec_replace_variables_in_string(
-                                    &RE_VARMENTION_ENV,
-                                    &FMT_VARMENTION_ENV,
-                                    &s,
-                                    &sys_variables,
-                                );
-                                s = _ec_replace_markers_in_string(
-                                    &s,
-                                    &var_user_home,
-                                    &var_config_file_dir,
-                                );
-                                job.destination_dir = PathBuf::from(_ec_add_trailing_slashes(
-                                    &_ec_normalize_path_slashes(&s),
-                                ));
-                            }
-                            "patterns_include" => {
-                                let cur_key = "job/patterns_include";
-                                if !item.is_list() {
-                                    return Err(_ec_error_invalid_config(cur_key));
-                                }
-                                let mut li: Vec<String> = Vec::new();
-                                for i in item.as_list().unwrap() {
-                                    if let Some(s) = i.as_str() {
-                                        if !s.is_empty() {
-                                            li.push(String::from(s));
-                                        }
-                                    }
-                                }
-                                job.include_pattern = combine_regexp_patterns(&li);
-                            }
-                            "patterns_exclude" => {
-                                let cur_key = "job/patterns_exclude";
-                                if !item.is_list() {
-                                    return Err(_ec_error_invalid_config(cur_key));
-                                }
-                                let mut li: Vec<String> = Vec::new();
-                                for i in item.as_list().unwrap() {
-                                    if let Some(s) = i.as_str() {
-                                        if !s.is_empty() {
-                                            li.push(String::from(s));
-                                        }
-                                    }
-                                }
-                                job.exclude_pattern = combine_regexp_patterns(&li);
-                            }
-                            "patterns_exclude_dir" => {
-                                let cur_key = "job/patterns_exclude_dir";
-                                if !item.is_list() {
-                                    return Err(_ec_error_invalid_config(cur_key));
-                                }
-                                let mut li: Vec<String> = Vec::new();
-                                for i in item.as_list().unwrap() {
-                                    if let Some(s) = i.as_str() {
-                                        if !s.is_empty() {
-                                            li.push(String::from(s));
-                                        }
-                                    }
-                                }
-                                job.excludedir_pattern = combine_regexp_patterns(&li);
-                            }
-                            "recursive" => {
-                                let cur_key = "job/recursive";
-                                if !item.is_bool() {
-                                    return Err(_ec_error_invalid_config(cur_key));
-                                }
-                                job.recursive = *item.as_bool().unwrap();
-                            }
-                            "case_sensitive" => {
-                                let cur_key = "job/case_sensitive";
-                                if !item.is_bool() {
-                                    return Err(_ec_error_invalid_config(cur_key));
-                                }
-                                job.case_sensitive = *item.as_bool().unwrap();
-                            }
-                            "follow_symlinks" => {
-                                let cur_key = "job/follow_symlinks";
-                                if !item.is_bool() {
-                                    return Err(_ec_error_invalid_config(cur_key));
-                                }
-                                job.follow_symlinks = *item.as_bool().unwrap();
-                            }
-                            "overwrite" => {
-                                let cur_key = "job/overwrite";
-                                if !item.is_bool() {
-                                    return Err(_ec_error_invalid_config(cur_key));
-                                }
-                                job.overwrite = *item.as_bool().unwrap();
-                            }
-                            "skip_newer" => {
-                                let cur_key = "job/skip_newer";
-                                if !item.is_bool() {
-                                    return Err(_ec_error_invalid_config(cur_key));
-                                }
-                                job.skip_newer = *item.as_bool().unwrap();
-                            }
-                            "check_content" => {
-                                let cur_key = "job/check_content";
-                                if !item.is_bool() {
-                                    return Err(_ec_error_invalid_config(cur_key));
-                                }
-                                job.check_content = *item.as_bool().unwrap();
-                            }
-                            "remove_others_matching" => {
-                                let cur_key = "job/remove_others_matching";
-                                if !item.is_bool() {
-                                    return Err(_ec_error_invalid_config(cur_key));
-                                }
-                                job.remove_others_matching = *item.as_bool().unwrap();
-                            }
-                            "create_directories" => {
-                                let cur_key = "job/create_directories";
-                                if !item.is_bool() {
-                                    return Err(_ec_error_invalid_config(cur_key));
-                                }
-                                job.create_directories = *item.as_bool().unwrap();
-                            }
-                            "keep_structure" => {
-                                let cur_key = "job/keep_structure";
-                                if !item.is_bool() {
-                                    return Err(_ec_error_invalid_config(cur_key));
-                                }
-                                job.keep_structure = *item.as_bool().unwrap();
-                            }
-                            "trash_on_delete" => {
-                                let cur_key = "job/trash_on_delete";
-                                if !item.is_bool() {
-                                    return Err(_ec_error_invalid_config(cur_key));
-                                }
-                                job.trash_on_delete = *item.as_bool().unwrap();
-                            }
-                            "trash_on_overwrite" => {
-                                let cur_key = "job/trash_on_overwrite";
-                                if !item.is_bool() {
-                                    return Err(_ec_error_invalid_config(cur_key));
-                                }
-                                job.trash_on_overwrite = *item.as_bool().unwrap();
-                            }
-                            "halt_on_errors" => {
-                                let cur_key = "job/halt_on_errors";
-                                if !item.is_bool() {
-                                    return Err(_ec_error_invalid_config(cur_key));
-                                }
-                                job.halt_on_errors = *item.as_bool().unwrap();
-                            }
-                            _ => {
-                                return Err(_ec_error_invalid_config(cur_key));
-                            }
-                        }
-                    }
+                    let job_map = job_entry.as_map().unwrap();
+                    job.job_name =
+                        cfg_mandatory!(cfg_string_check_regex(&job_map, "name", &RE_JOBNAME))?
+                            .unwrap();
+                    job.source_dir = PathBuf::from({
+                        cfg_mandatory!(cfg_string(&job_map, "source"))?
+                            .unwrap()
+                            .replace_start(&markers.iter().map(|(k, v)| (*k, v.as_str())).collect())
+                            .replace_vars(
+                                &RE_VARMENTION_ENV,
+                                &FMT_VARMENTION_ENV,
+                                &global_config
+                                    .variables
+                                    .iter()
+                                    .map(|(k, v)| (k.as_str(), v.as_str()))
+                                    .collect(),
+                            )
+                            .replace_vars(
+                                &RE_VARMENTION_ENV,
+                                &FMT_VARMENTION_ENV,
+                                &sys_variables
+                                    .iter()
+                                    .map(|(k, v)| (k.as_str(), v.as_str()))
+                                    .collect(),
+                            )
+                            + separator
+                    });
+                    job.destination_dir = PathBuf::from({
+                        cfg_mandatory!(cfg_string(&job_map, "destination"))?
+                            .unwrap()
+                            .replace_start(&markers.iter().map(|(k, v)| (*k, v.as_str())).collect())
+                            .replace_vars(
+                                &RE_VARMENTION_ENV,
+                                &FMT_VARMENTION_ENV,
+                                &global_config
+                                    .variables
+                                    .iter()
+                                    .map(|(k, v)| (k.as_str(), v.as_str()))
+                                    .collect(),
+                            )
+                            .replace_vars(
+                                &RE_VARMENTION_ENV,
+                                &FMT_VARMENTION_ENV,
+                                &sys_variables
+                                    .iter()
+                                    .map(|(k, v)| (k.as_str(), v.as_str()))
+                                    .collect(),
+                            )
+                            + separator
+                    });
+                    job.include_pattern = combine_regexp_patterns(
+                        &cfg_mandatory!(cfg_vec_string(&job_map, "patterns_include"))?.unwrap(),
+                    );
+                    job.exclude_pattern = cfg_vec_string(&job_map, "patterns_exclude")?
+                        .map_or(job.exclude_pattern, |v| combine_regexp_patterns(&v));
+                    job.excludedir_pattern = cfg_vec_string(&job_map, "patterns_exclude_dir")?
+                        .map_or(job.excludedir_pattern, |v| combine_regexp_patterns(&v));
+                    job.recursive = cfg_bool(job_map, "recursive")?.unwrap_or(job.recursive);
+                    job.case_sensitive = cfg_bool(job_map, "case_sensitive")?.unwrap_or(job.case_sensitive);
+                    job.follow_symlinks = cfg_bool(job_map, "follow_symlinks")?.unwrap_or(job.follow_symlinks);
+                    job.overwrite = cfg_bool(job_map, "overwrite")?.unwrap_or(job.overwrite);
+                    job.skip_newer = cfg_bool(job_map, "skip_newer")?.unwrap_or(job.skip_newer);
+                    job.check_content = cfg_bool(job_map, "check_content")?.unwrap_or(job.check_content);
+                    job.remove_others_matching = cfg_bool(job_map, "remove_others_matching")?.unwrap_or(job.remove_others_matching);
+                    job.create_directories = cfg_bool(job_map, "create_directories")?.unwrap_or(job.create_directories);
+                    job.keep_structure = cfg_bool(job_map, "keep_structure")?.unwrap_or(job.keep_structure);
+                    job.trash_on_delete = cfg_bool(job_map, "trash_on_delete")?.unwrap_or(job.trash_on_delete);
+                    job.trash_on_overwrite = cfg_bool(job_map, "trash_on_overwrite")?.unwrap_or(job.trash_on_overwrite);
+                    job.halt_on_errors = cfg_bool(job_map, "overwrite")?.unwrap_or(job.overwrite);
+
                     if job.job_name.is_empty() {
-                        return Err(_ec_error_invalid_config(cur_key));
+                        return Err(_ec_error_invalid_config("job_name"));
                     }
                     global_config.job_list.push(String::from(&job.job_name));
                     job_configs.push(job);
@@ -973,7 +731,7 @@ fn extract_config(
 
     // check that all active jobs that have been listed are actually defined
     let cur_key = "active_jobs";
-    for item in check_active_jobs {
+    for item in global_config.active_jobs.clone() {
         if !global_config.job_list.contains(&item) {
             return Err(_ec_error_invalid_config(cur_key));
         }
@@ -1475,7 +1233,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                         parsable_output,
                         &job.job_name,
                         OPERATION_JOB_BEGIN,
-                        ERR_OK,
+                        ERR_CODE_OK,
                         files_to_copy.len(),
                         files_to_delete.len(),
                     )
@@ -1528,7 +1286,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                                         parsable_output,
                                         &job.job_name,
                                         OPERATION_JOB_COPY,
-                                        ERR_OK,
+                                        ERR_CODE_OK,
                                         &item,
                                         &destfile_absolute,
                                     )
@@ -1584,7 +1342,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                                     parsable_output,
                                     &job.job_name,
                                     OPERATION_JOB_DEL,
-                                    ERR_OK,
+                                    ERR_CODE_OK,
                                     &PathBuf::new(),
                                     &item,
                                 )
@@ -1619,7 +1377,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                         parsable_output,
                         &job.job_name,
                         OPERATION_JOB_END,
-                        ERR_OK,
+                        ERR_CODE_OK,
                         num_files_copied,
                         num_files_deleted,
                     )
@@ -1701,7 +1459,7 @@ fn run_jobs(
                     if global_config.halt_on_errors {
                         return Err(std::io::Error::new(
                             std::io::ErrorKind::Interrupted,
-                            format_err_parsable(ERR_GENERIC),
+                            format_err_parsable(ERR_CODE_GENERIC),
                         ));
                     }
                 }
@@ -1739,7 +1497,7 @@ fn main() -> std::io::Result<()> {
         parsable_output: bool,
         operation: &str,
         name: &str,
-        e: Option<std::io::Error>,
+        e: Option<Error>,
         msg_parsable: &str,
         msg_verbose: &str,
     ) -> String {
@@ -1761,7 +1519,14 @@ fn main() -> std::io::Result<()> {
             }
             _ => {
                 if parsable_output {
-                    format_output_parsable(CONTEXT_MAIN, name, ERR_OK, operation, msg_parsable, "")
+                    format_output_parsable(
+                        CONTEXT_MAIN,
+                        name,
+                        ERR_CODE_OK,
+                        operation,
+                        msg_parsable,
+                        "",
+                    )
                 } else {
                     format!("info: {msg_verbose}")
                 }
@@ -1813,8 +1578,8 @@ fn main() -> std::io::Result<()> {
                                 OPERATION_MAIN_END,
                                 "",
                                 None,
-                                &format_err_parsable(ERR_OK),
-                                &format_err_verbose(ERR_OK),
+                                &format_err_parsable(ERR_CODE_OK),
+                                &format_err_verbose(ERR_CODE_OK),
                             )
                         );
                     }
@@ -1829,8 +1594,8 @@ fn main() -> std::io::Result<()> {
                                 OPERATION_MAIN_END,
                                 "",
                                 Some(e),
-                                &format_err_parsable(ERR_GENERIC),
-                                &format_err_verbose(ERR_GENERIC),
+                                &format_err_parsable(ERR_CODE_GENERIC),
+                                &format_err_verbose(ERR_CODE_GENERIC),
                             )
                         );
                     }
@@ -1847,8 +1612,8 @@ fn main() -> std::io::Result<()> {
                         OPERATION_MAIN_END,
                         "",
                         Some(e),
-                        &format_err_parsable(ERR_INVALID_CONFIG_FILE),
-                        &format_err_verbose(ERR_INVALID_CONFIG_FILE),
+                        &format_err_parsable(ERR_CODE_INVALID_CONFIG_FILE),
+                        &format_err_verbose(ERR_CODE_INVALID_CONFIG_FILE),
                     )
                 );
             }
