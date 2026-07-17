@@ -88,7 +88,7 @@ struct CopyJobGlobalConfig {
 #[derive(Debug)]
 enum Outcome {
     Success,
-    Error(u64), // will report a code from the following list
+    Error(i64), // will report a code from the following list
 }
 
 // Some constants used within the code
@@ -98,81 +98,6 @@ lazy_static! {
     // into the appropriate fully qualified path, namely:
     //  USER-HOME => $HOME / %USERPROFILE%
     //  CONFIG-FILE-DIR => where the current config file is located
-    static ref DIR_MARKERS: HashMap<&'static str, Vec<&'static str>> = {
-        let mut _tmap = HashMap::new();
-        if cfg!(windows) {
-            _tmap.insert("USER-HOME", vec![r"~/", r"~\"]);
-            _tmap.insert("CONFIG-FILE-DIR", vec![r"@/", r"@\"]);
-        } else {
-            _tmap.insert("USER-HOME", vec![r"~/"]);
-            _tmap.insert("CONFIG-FILE-DIR", vec![r"@/"]);
-        }
-        _tmap
-    };
-
-    // error strings (parsable version)
-    static ref ERRS_PARSABLE: HashMap<u64, &'static str> = {
-        let mut _tmap = HashMap::new();
-        _tmap.insert(FOERR_GENERIC_FAILURE, "FOERR_GENERIC_FAILURE");
-        _tmap.insert(FOERR_DESTINATION_IS_ITSELF, "FOERR_DESTINATION_IS_ITSELF");
-        _tmap.insert(FOERR_DESTINATION_IS_DIR, "FOERR_DESTINATION_IS_DIR");
-        _tmap.insert(FOERR_DESTINATION_IS_SYMLINK, "FOERR_DESTINATION_IS_SYMLINK");
-        _tmap.insert(FOERR_DESTINATION_IS_NEWER, "FOERR_DESTINATION_IS_NEWER");
-        _tmap.insert(FOERR_DESTINATION_IS_IDENTICAL, "FOERR_DESTINATION_IS_IDENTICAL");
-        _tmap.insert(FOERR_DESTINATION_IS_READONLY, "FOERR_DESTINATION_IS_READONLY");
-        _tmap.insert(FOERR_DESTINATION_EXISTS, "FOERR_DESTINATION_EXISTS");
-        _tmap.insert(FOERR_DESTINATION_NOT_ACCESSIBLE, "FOERR_DESTINATION_NOT_ACCESSIBLE");
-        _tmap.insert(FOERR_CANNOT_CREATE_DIR, "FOERR_CANNOT_CREATE_DIR");
-        _tmap.insert(FOERR_CANNOT_CREATE_FILE, "FOERR_CANNOT_CREATE_FILE");
-        _tmap.insert(FOERR_SOURCE_NOT_EXISTS, "FOERR_SOURCE_NOT_EXISTS");
-        _tmap.insert(FOERR_SOURCE_IS_DIR, "FOERR_SOURCE_IS_DIR");
-        _tmap.insert(FOERR_SOURCE_IS_SYMLINK, "FOERR_SOURCE_IS_SYMLINK");
-        _tmap.insert(FOERR_SOURCE_NOT_ACCESSIBLE, "FOERR_SOURCE_NOT_ACCESSIBLE");
-
-        _tmap.insert(CJERR_GENERIC_FAILURE, "CJERR_GENERIC_FAILURE");
-        _tmap.insert(CJERR_SOURCE_DIR_NOT_EXISTS, "CJERR_SOURCE_DIR_NOT_EXISTS");
-        _tmap.insert(CJERR_DESTINATION_DIR_NOT_EXISTS, "CJERR_DESTINATION_DIR_NOT_EXISTS");
-        _tmap.insert(CJERR_NO_SOURCE_FILES, "CJERR_NO_SOURCE_FILES");
-        _tmap.insert(CJERR_CANNOT_DETERMINE_DESTFILE, "CJERR_CANNOT_DETERMINE_DESTFILE");
-        _tmap.insert(CJERR_HALT_ON_COPY_ERROR, "CJERR_HALT_ON_COPY_ERROR");
-
-        _tmap.insert(ERR_CODE_INVALID_CONFIG_FILE, "ERR_INVALID_CONFIG");
-        _tmap.insert(ERR_CODE_GENERIC, "ERR_GENERIC");
-        _tmap.insert(ERR_CODE_OK, "OK");
-        _tmap
-    };
-
-    // error strings (verbose version)
-    static ref ERRS_VERBOSE: HashMap<u64, &'static str> = {
-        let mut _tmap = HashMap::new();
-        _tmap.insert(FOERR_GENERIC_FAILURE, "file operation: generic failure");
-        _tmap.insert(FOERR_DESTINATION_IS_ITSELF, "file operation: failed attempt to copy on self");
-        _tmap.insert(FOERR_DESTINATION_IS_DIR, "file operation: destination is a directory");
-        _tmap.insert(FOERR_DESTINATION_IS_SYMLINK, "file operation: destination is a symbolic link");
-        _tmap.insert(FOERR_DESTINATION_IS_NEWER, "file operation: destination is more recent than source");
-        _tmap.insert(FOERR_DESTINATION_IS_IDENTICAL, "file operation: destination is identical to source");
-        _tmap.insert(FOERR_DESTINATION_IS_READONLY, "file operation: cannot overwrite destination");
-        _tmap.insert(FOERR_DESTINATION_EXISTS, "file operation: destination exists");
-        _tmap.insert(FOERR_DESTINATION_NOT_ACCESSIBLE, "file operation: destination is not accessible");
-        _tmap.insert(FOERR_CANNOT_CREATE_DIR, "file operation: cannot create directory");
-        _tmap.insert(FOERR_CANNOT_CREATE_FILE, "file operation: cannot create file");
-        _tmap.insert(FOERR_SOURCE_NOT_EXISTS, "file operation: source file does not exist");
-        _tmap.insert(FOERR_SOURCE_IS_DIR, "file operation: source file is a directory");
-        _tmap.insert(FOERR_SOURCE_IS_SYMLINK, "file operation: source file is a symbolic link");
-        _tmap.insert(FOERR_SOURCE_NOT_ACCESSIBLE, "file operation: source file is not accessible");
-
-        _tmap.insert(CJERR_GENERIC_FAILURE, "copy job: generic failure");
-        _tmap.insert(CJERR_SOURCE_DIR_NOT_EXISTS, "copy job: source directory does not exist");
-        _tmap.insert(CJERR_DESTINATION_DIR_NOT_EXISTS, "copy job: destination does not exist");
-        _tmap.insert(CJERR_NO_SOURCE_FILES, "copy job: no source files found");
-        _tmap.insert(CJERR_CANNOT_DETERMINE_DESTFILE, "copy job: cannot determine source");
-        _tmap.insert(CJERR_HALT_ON_COPY_ERROR, "copy job: ending job after copy error");
-
-        _tmap.insert(ERR_CODE_INVALID_CONFIG_FILE, "application: invalid config file");
-        _tmap.insert(ERR_CODE_GENERIC, "application: generic failure");
-        _tmap.insert(ERR_CODE_OK, "application: operation succeeded");
-        _tmap
-    };
 
     static ref STR_MATCH_NO_FILE: String = String::from(r"^\*$");
 
@@ -219,32 +144,32 @@ fn sha256_digest(path: &Path) -> std::io::Result<String> {
 }
 
 // Helpers to simply convert an error code to text
-fn format_err_parsable(code: u64) -> String {
-    if ERRS_PARSABLE.contains_key(&code) {
-        String::from(ERRS_PARSABLE[&code])
-    } else {
-        String::from(ERRS_PARSABLE[&ERR_CODE_GENERIC])
-    }
-}
+// fn format_err_parsable(code: i64) -> String {
+//     if ERRS_PARSABLE.contains_key(&code) {
+//         String::from(ERRS_PARSABLE[&code])
+//     } else {
+//         String::from(ERRS_PARSABLE[&ERR_CODE_GENERIC])
+//     }
+// }
 
-fn format_err_verbose(code: u64) -> String {
-    if ERRS_VERBOSE.contains_key(&code) {
-        String::from(ERRS_VERBOSE[&code])
-    } else {
-        String::from(ERRS_VERBOSE[&ERR_CODE_GENERIC])
-    }
-}
+// fn format_err_verbose(code: i64) -> String {
+//     if ERRS_VERBOSE.contains_key(&code) {
+//         String::from(ERRS_VERBOSE[&code])
+//     } else {
+//         String::from(ERRS_VERBOSE[&ERR_CODE_GENERIC])
+//     }
+// }
 
 // helper to format a parsable output line consistently
 fn format_output_parsable(
     context: &'static str,
     name: &str,
-    code: u64,
+    code: i64,
     operation: &str,
     arg1: &str,
     arg2: &str,
 ) -> String {
-    let mresult = format_err_parsable(code);
+    let mresult = code_to_str_parsable(code).to_string();
     let mtype = if code == 0 {
         String::from("INFO")
     } else {
@@ -352,66 +277,13 @@ fn extract_config(
     fn _ec_error_invalid_config(key: &str) -> Error {
         Error::new(
             Kind::Invalid,
+            ERR_CODE_INVALID_CONFIG_FILE,
             format!(
                 "{}:{key}",
-                format_err_parsable(ERR_CODE_INVALID_CONFIG_FILE)
+                code_to_str_parsable(ERR_CODE_INVALID_CONFIG_FILE).to_string()
             )
             .as_str(),
         )
-    }
-
-    // l2. handle environment and local variables
-    fn _ec_replace_variables_in_string(
-        pattern: &Regex,
-        format: &str,
-        source: &str,
-        vars: &HashMap<String, String>,
-    ) -> String {
-        let mut result = String::from(source);
-        // mimick shell by replacing undefined variables with the empty string:
-        // since the same function is used for both local and environment vars,
-        // this represents a difference with the Python version, that considered
-        // mentioning an undefined local variable a fatal error
-        // WARNING: this actually assumes that the regular expression pattern
-        //          "[%$]\{[a-zA-Z_][a-zA-Z0-9_]*\}" cannot appear in the source or
-        //          the destination directory within job definitions
-        while let Some(caps) = pattern.captures(result.as_str()) {
-            let varname = caps.get(1).map_or("", |m| m.as_str());
-            let occurrence = format.replace("*", varname);
-            if let Some(replacement) = vars.get(varname) {
-                result = result.replace(&occurrence, replacement);
-            } else {
-                result = result.replace(&occurrence, "");
-            }
-        }
-        result
-    }
-
-    // l3. handle special path markers
-    fn _ec_replace_markers_in_string(
-        source: &str,
-        user_home: &Path,
-        config_file_dir: &Path,
-    ) -> String {
-        let mut result = String::from(source);
-        for (mkey, mlist) in DIR_MARKERS.clone().iter() {
-            for marker in mlist {
-                if result.starts_with(marker) {
-                    match *mkey {
-                        "USER-HOME" => {
-                            result = user_home.to_string_lossy().to_string()
-                                + &String::from(&result[1..]); // to preserve the slash
-                        }
-                        "CONFIG-FILE-DIR" => {
-                            result = config_file_dir.to_string_lossy().to_string()
-                                + &String::from(&result[1..]); // to preserve the slash
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
-        result
     }
 
     // l4. normalize path slashes (forward+back & multiple)
@@ -495,7 +367,8 @@ fn extract_config(
         _ => {
             return Err(Error::new(
                 Kind::Invalid,
-                &format_err_parsable(ERR_CODE_INVALID_CONFIG_FILE),
+                ERR_CODE_INVALID_CONFIG_FILE,
+                code_to_str_parsable(ERR_CODE_INVALID_CONFIG_FILE),
             ));
         }
     };
@@ -653,50 +526,58 @@ fn extract_config(
                         cfg_mandatory!(cfg_string_check_regex(&job_map, "name", &RE_JOBNAME))?
                             .unwrap();
                     job.source_dir = PathBuf::from({
-                        cfg_mandatory!(cfg_string(&job_map, "source"))?
-                            .unwrap()
-                            .replace_start(&markers.iter().map(|(k, v)| (*k, v.as_str())).collect())
-                            .replace_vars(
-                                &RE_VARMENTION_ENV,
-                                &FMT_VARMENTION_ENV,
-                                &global_config
-                                    .variables
-                                    .iter()
-                                    .map(|(k, v)| (k.as_str(), v.as_str()))
-                                    .collect(),
-                            )
-                            .replace_vars(
-                                &RE_VARMENTION_ENV,
-                                &FMT_VARMENTION_ENV,
-                                &sys_variables
-                                    .iter()
-                                    .map(|(k, v)| (k.as_str(), v.as_str()))
-                                    .collect(),
-                            )
-                            + separator
+                        _ec_normalize_path_slashes(&_ec_add_trailing_slashes(
+                            &(cfg_mandatory!(cfg_string(&job_map, "source"))?
+                                .unwrap()
+                                .replace_start(
+                                    &markers.iter().map(|(k, v)| (*k, v.as_str())).collect(),
+                                )
+                                .replace_vars(
+                                    &RE_VARMENTION_LOC,
+                                    &FMT_VARMENTION_LOC,
+                                    &global_config
+                                        .variables
+                                        .iter()
+                                        .map(|(k, v)| (k.as_str(), v.as_str()))
+                                        .collect(),
+                                )
+                                .replace_vars(
+                                    &RE_VARMENTION_ENV,
+                                    &FMT_VARMENTION_ENV,
+                                    &sys_variables
+                                        .iter()
+                                        .map(|(k, v)| (k.as_str(), v.as_str()))
+                                        .collect(),
+                                )
+                                + separator),
+                        ))
                     });
                     job.destination_dir = PathBuf::from({
-                        cfg_mandatory!(cfg_string(&job_map, "destination"))?
-                            .unwrap()
-                            .replace_start(&markers.iter().map(|(k, v)| (*k, v.as_str())).collect())
-                            .replace_vars(
-                                &RE_VARMENTION_ENV,
-                                &FMT_VARMENTION_ENV,
-                                &global_config
-                                    .variables
-                                    .iter()
-                                    .map(|(k, v)| (k.as_str(), v.as_str()))
-                                    .collect(),
-                            )
-                            .replace_vars(
-                                &RE_VARMENTION_ENV,
-                                &FMT_VARMENTION_ENV,
-                                &sys_variables
-                                    .iter()
-                                    .map(|(k, v)| (k.as_str(), v.as_str()))
-                                    .collect(),
-                            )
-                            + separator
+                        _ec_normalize_path_slashes(&_ec_add_trailing_slashes(
+                            &(cfg_mandatory!(cfg_string(&job_map, "destination"))?
+                                .unwrap()
+                                .replace_start(
+                                    &markers.iter().map(|(k, v)| (*k, v.as_str())).collect(),
+                                )
+                                .replace_vars(
+                                    &RE_VARMENTION_LOC,
+                                    &FMT_VARMENTION_LOC,
+                                    &global_config
+                                        .variables
+                                        .iter()
+                                        .map(|(k, v)| (k.as_str(), v.as_str()))
+                                        .collect(),
+                                )
+                                .replace_vars(
+                                    &RE_VARMENTION_ENV,
+                                    &FMT_VARMENTION_ENV,
+                                    &sys_variables
+                                        .iter()
+                                        .map(|(k, v)| (k.as_str(), v.as_str()))
+                                        .collect(),
+                                )
+                                + separator),
+                        ))
                     });
                     job.include_pattern = combine_regexp_patterns(
                         &cfg_mandatory!(cfg_vec_string(&job_map, "patterns_include"))?.unwrap(),
@@ -706,16 +587,24 @@ fn extract_config(
                     job.excludedir_pattern = cfg_vec_string(&job_map, "patterns_exclude_dir")?
                         .map_or(job.excludedir_pattern, |v| combine_regexp_patterns(&v));
                     job.recursive = cfg_bool(job_map, "recursive")?.unwrap_or(job.recursive);
-                    job.case_sensitive = cfg_bool(job_map, "case_sensitive")?.unwrap_or(job.case_sensitive);
-                    job.follow_symlinks = cfg_bool(job_map, "follow_symlinks")?.unwrap_or(job.follow_symlinks);
+                    job.case_sensitive =
+                        cfg_bool(job_map, "case_sensitive")?.unwrap_or(job.case_sensitive);
+                    job.follow_symlinks =
+                        cfg_bool(job_map, "follow_symlinks")?.unwrap_or(job.follow_symlinks);
                     job.overwrite = cfg_bool(job_map, "overwrite")?.unwrap_or(job.overwrite);
                     job.skip_newer = cfg_bool(job_map, "skip_newer")?.unwrap_or(job.skip_newer);
-                    job.check_content = cfg_bool(job_map, "check_content")?.unwrap_or(job.check_content);
-                    job.remove_others_matching = cfg_bool(job_map, "remove_others_matching")?.unwrap_or(job.remove_others_matching);
-                    job.create_directories = cfg_bool(job_map, "create_directories")?.unwrap_or(job.create_directories);
-                    job.keep_structure = cfg_bool(job_map, "keep_structure")?.unwrap_or(job.keep_structure);
-                    job.trash_on_delete = cfg_bool(job_map, "trash_on_delete")?.unwrap_or(job.trash_on_delete);
-                    job.trash_on_overwrite = cfg_bool(job_map, "trash_on_overwrite")?.unwrap_or(job.trash_on_overwrite);
+                    job.check_content =
+                        cfg_bool(job_map, "check_content")?.unwrap_or(job.check_content);
+                    job.remove_others_matching = cfg_bool(job_map, "remove_others_matching")?
+                        .unwrap_or(job.remove_others_matching);
+                    job.create_directories =
+                        cfg_bool(job_map, "create_directories")?.unwrap_or(job.create_directories);
+                    job.keep_structure =
+                        cfg_bool(job_map, "keep_structure")?.unwrap_or(job.keep_structure);
+                    job.trash_on_delete =
+                        cfg_bool(job_map, "trash_on_delete")?.unwrap_or(job.trash_on_delete);
+                    job.trash_on_overwrite =
+                        cfg_bool(job_map, "trash_on_overwrite")?.unwrap_or(job.trash_on_overwrite);
                     job.halt_on_errors = cfg_bool(job_map, "overwrite")?.unwrap_or(job.overwrite);
 
                     if job.job_name.is_empty() {
@@ -1066,7 +955,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
         parsable_output: bool,
         job: &str,
         operation: &str,
-        code: u64,
+        code: i64,
         source: &Path,
         destination: &Path,
     ) -> String {
@@ -1091,7 +980,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                     } else {
                         format!(
                             "error in job {job}: '{}' while copying {} => {}",
-                            format_err_verbose(code),
+                            code_to_str_readable(code),
                             source.display(),
                             destination.display(),
                         )
@@ -1103,7 +992,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                     } else {
                         format!(
                             "error in job {job}: '{}' while removing {}",
-                            format_err_verbose(code),
+                            code_to_str_readable(code),
                             destination.display(),
                         )
                     }
@@ -1120,7 +1009,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
         parsable_output: bool,
         job: &str,
         operation: &str,
-        code: u64,
+        code: i64,
         num_copy: usize,
         num_delete: usize,
     ) -> String {
@@ -1143,7 +1032,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                             {num_delete} to possibly remove on destination"
                         )
                     } else {
-                        format!("error before job {job}: '{}'", format_err_verbose(code))
+                        format!("error before job {job}: '{}'", code_to_str_readable(code))
                     }
                 }
                 OPERATION_JOB_END => {
@@ -1154,7 +1043,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                             {num_delete} removed on destination"
                         )
                     } else {
-                        format!("error in job {job}: '{}'", format_err_verbose(code))
+                        format!("error in job {job}: '{}'", code_to_str_readable(code))
                     }
                 }
                 op => {
@@ -1428,13 +1317,16 @@ fn run_jobs(
     // local helpers:
 
     // l1. format a message (both machine readable and verbose output)
-    fn _format_message_rj(parsable_output: bool, job: &str, code: u64) -> String {
+    fn _format_message_rj(parsable_output: bool, job: &str, code: i64) -> String {
         if parsable_output {
             format_output_parsable(CONTEXT_TASK, job, code, OPERATION_JOB_END, "", "")
         } else if code == 0 {
             format!("job {job} completed successfully")
         } else {
-            format!("job {job} failed with error '{}'", format_err_verbose(code))
+            format!(
+                "job {job} failed with error '{}'",
+                code_to_str_readable(code)
+            )
         }
     }
 
@@ -1459,7 +1351,7 @@ fn run_jobs(
                     if global_config.halt_on_errors {
                         return Err(std::io::Error::new(
                             std::io::ErrorKind::Interrupted,
-                            format_err_parsable(ERR_CODE_GENERIC),
+                            code_to_str_parsable(ERR_CODE_GENERIC).to_string(),
                         ));
                     }
                 }
@@ -1504,11 +1396,10 @@ fn main() -> std::io::Result<()> {
         match e {
             Some(err) => {
                 if parsable_output {
-                    let code = u64::try_from(err.raw_os_error().unwrap_or(9999)).unwrap_or(9999);
                     format_output_parsable(
                         CONTEXT_MAIN,
                         name,
-                        code,
+                        err.code(),
                         operation,
                         msg_parsable,
                         &err.to_string(),
@@ -1578,8 +1469,8 @@ fn main() -> std::io::Result<()> {
                                 OPERATION_MAIN_END,
                                 "",
                                 None,
-                                &format_err_parsable(ERR_CODE_OK),
-                                &format_err_verbose(ERR_CODE_OK),
+                                code_to_str_parsable(ERR_CODE_OK),
+                                code_to_str_readable(ERR_CODE_OK),
                             )
                         );
                     }
@@ -1593,9 +1484,9 @@ fn main() -> std::io::Result<()> {
                                 args.parsable_output,
                                 OPERATION_MAIN_END,
                                 "",
-                                Some(e),
-                                &format_err_parsable(ERR_CODE_GENERIC),
-                                &format_err_verbose(ERR_CODE_GENERIC),
+                                Some(e.into()),
+                                code_to_str_parsable(ERR_CODE_GENERIC),
+                                code_to_str_readable(ERR_CODE_GENERIC),
                             )
                         );
                     }
@@ -1612,8 +1503,8 @@ fn main() -> std::io::Result<()> {
                         OPERATION_MAIN_END,
                         "",
                         Some(e),
-                        &format_err_parsable(ERR_CODE_INVALID_CONFIG_FILE),
-                        &format_err_verbose(ERR_CODE_INVALID_CONFIG_FILE),
+                        code_to_str_parsable(ERR_CODE_INVALID_CONFIG_FILE),
+                        code_to_str_readable(ERR_CODE_INVALID_CONFIG_FILE),
                     )
                 );
             }

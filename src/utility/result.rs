@@ -1,17 +1,76 @@
 //! A common result type: catching errors from modules used throughout
 //! the entire code. The corresponding error carries some information
 //! about what went wrong.
-
 #![allow(dead_code)]
 
-// use mlua;
-// use notify;
-// use std::{self, fmt, sync::PoisonError};
 use std::{self, fmt};
 
-use crate::constants::ERR_FAILED;
+use crate::constants::*;
 
-/// Types of specific errors
+/// Transform an error code into a parsable string
+pub fn code_to_str_parsable(code: i64) -> &'static str {
+    match code {
+        ERR_CODE_OK => "OK",
+        ERR_CODE_GENERIC => "ERR_GENERIC",
+        ERR_CODE_INVALID_CONFIG_FILE => "ERR_INVALID_CONFIG",
+        FOERR_GENERIC_FAILURE => "FOERR_GENERIC_FAILURE",
+        FOERR_DESTINATION_IS_ITSELF => "FOERR_DESTINATION_IS_ITSELF",
+        FOERR_DESTINATION_IS_DIR => "FOERR_DESTINATION_IS_DIR",
+        FOERR_DESTINATION_IS_SYMLINK => "FOERR_DESTINATION_IS_SYMLINK",
+        FOERR_DESTINATION_IS_NEWER => "FOERR_DESTINATION_IS_NEWER",
+        FOERR_DESTINATION_IS_IDENTICAL => "FOERR_DESTINATION_IS_IDENTICAL",
+        FOERR_DESTINATION_IS_READONLY => "FOERR_DESTINATION_IS_READONLY",
+        FOERR_DESTINATION_EXISTS => "FOERR_DESTINATION_EXISTS",
+        FOERR_DESTINATION_NOT_ACCESSIBLE => "FOERR_DESTINATION_NOT_ACCESSIBLE",
+        FOERR_CANNOT_CREATE_DIR => "FOERR_CANNOT_CREATE_DIR",
+        FOERR_CANNOT_CREATE_FILE => "FOERR_CANNOT_CREATE_FILE",
+        FOERR_SOURCE_NOT_EXISTS => "FOERR_SOURCE_NOT_EXISTS",
+        FOERR_SOURCE_IS_DIR => "FOERR_SOURCE_IS_DIR",
+        FOERR_SOURCE_IS_SYMLINK => "FOERR_SOURCE_IS_SYMLINK",
+        FOERR_SOURCE_NOT_ACCESSIBLE => "FOERR_SOURCE_NOT_ACCESSIBLE",
+        CJERR_GENERIC_FAILURE => "CJERR_GENERIC_FAILURE",
+        CJERR_SOURCE_DIR_NOT_EXISTS => "CJERR_SOURCE_DIR_NOT_EXISTS",
+        CJERR_DESTINATION_DIR_NOT_EXISTS => "CJERR_DESTINATION_DIR_NOT_EXISTS",
+        CJERR_NO_SOURCE_FILES => "CJERR_NO_SOURCE_FILES",
+        CJERR_CANNOT_DETERMINE_DESTFILE => "CJERR_CANNOT_DETERMINE_DESTFILE",
+        CJERR_HALT_ON_COPY_ERROR => "CJERR_HALT_ON_COPY_ERROR",
+        _ => "ERR_GENERIC",
+    }
+}
+
+/// Transform an error code into a human readable string
+pub fn code_to_str_readable(code: i64) -> &'static str {
+    match code {
+        ERR_CODE_OK => "application: operation succeeded",
+        ERR_CODE_GENERIC => "application: generic failure",
+        ERR_CODE_INVALID_CONFIG_FILE => "application: invalid config file",
+        FOERR_GENERIC_FAILURE => "file operation: generic failure",
+        FOERR_DESTINATION_IS_ITSELF => "file operation: failed attempt to copy on self",
+        FOERR_DESTINATION_IS_DIR => "file operation: destination is a directory",
+        FOERR_DESTINATION_IS_SYMLINK => "file operation: destination is a symbolic link",
+        FOERR_DESTINATION_IS_NEWER => "file operation: destination is more recent than source",
+        FOERR_DESTINATION_IS_IDENTICAL => "file operation: destination is identical to source",
+        FOERR_DESTINATION_IS_READONLY => "file operation: cannot overwrite destination",
+        FOERR_DESTINATION_EXISTS => "file operation: destination exists",
+        FOERR_DESTINATION_NOT_ACCESSIBLE => "file operation: destination is not accessible",
+        FOERR_CANNOT_CREATE_DIR => "file operation: cannot create directory",
+        FOERR_CANNOT_CREATE_FILE => "file operation: cannot create file",
+        FOERR_SOURCE_NOT_EXISTS => "file operation: source file does not exist",
+        FOERR_SOURCE_IS_DIR => "file operation: source file is a directory",
+        FOERR_SOURCE_IS_SYMLINK => "file operation: source file is a symbolic link",
+        FOERR_SOURCE_NOT_ACCESSIBLE => "file operation: source file is not accessible",
+        CJERR_GENERIC_FAILURE => "copy job: generic failure",
+        CJERR_SOURCE_DIR_NOT_EXISTS => "copy job: source directory does not exist",
+        CJERR_DESTINATION_DIR_NOT_EXISTS => "copy job: destination does not exist",
+        CJERR_NO_SOURCE_FILES => "copy job: no source files found",
+        CJERR_CANNOT_DETERMINE_DESTFILE => "copy job: cannot determine source",
+        CJERR_HALT_ON_COPY_ERROR => "copy job: ending job after copy error",
+        _ => "application: generic failure",
+    }
+}
+
+// types of specific errors: coming from another crate, all this variety might
+// be overkill - TODO: optimize after refactoring
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub enum Kind {
@@ -58,18 +117,6 @@ pub enum Origin {
     Native,
     Unit,
     StdIo,
-    // Notify,
-    // Sync,
-    // Lua,
-
-    // #[cfg(feature = "dbus")]
-    // DBus,
-
-    // #[cfg(windows)]
-    // #[cfg(feature = "wmi")]
-    // Wmi,
-
-    // ...
     Unknown,
 }
 
@@ -82,18 +129,6 @@ impl fmt::Display for Origin {
                 Origin::Native => "self",
                 Origin::Unit => "unit",
                 Origin::StdIo => "io",
-                // Origin::Notify => "fschange",
-                // Origin::Sync => "sync",
-                // Origin::Lua => "lua",
-
-                // #[cfg(feature = "dbus")]
-                // Origin::DBus => "dbus",
-
-                // #[cfg(windows)]
-                // #[cfg(feature = "wmi")]
-                // Origin::Wmi => "wmi",
-
-                // ...
                 Origin::Unknown => "unknown",
             }
         )
@@ -107,15 +142,20 @@ impl fmt::Display for Origin {
 pub struct Error {
     kind: Kind,
     origin: Origin,
+    code: i64,
     message: String, // freeform message: owned in order to avoid lifetime management
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.origin != Origin::Native {
-            write!(f, "{} ({}): {}", self.kind, self.origin, self.message)
+            write!(
+                f,
+                "{} ({}): {} / {}",
+                self.kind, self.origin, self.code, self.message
+            )
         } else {
-            write!(f, "{}: {}", self.kind, self.message)
+            write!(f, "{}: {} / {}", self.kind, self.code, self.message)
         }
     }
 }
@@ -132,85 +172,11 @@ impl From<std::io::Error> for Error {
                 _ => Kind::Unknown,
             },
             origin: Origin::StdIo,
+            code: e.raw_os_error().unwrap_or(ERR_CODE_GENERIC as i32) as i64,
             message: e.to_string(),
         }
     }
 }
-
-// // notify (fschange) errors
-// impl From<notify::Error> for Error {
-//     fn from(e: notify::Error) -> Self {
-//         Self {
-//             kind: Kind::Failed,
-//             origin: Origin::Notify,
-//             message: e.to_string(),
-//         }
-//     }
-// }
-
-// // Lua errors
-// impl From<mlua::Error> for Error {
-//     fn from(e: mlua::Error) -> Self {
-//         Self {
-//             kind: Kind::Failed,
-//             origin: Origin::Lua,
-//             message: e.to_string(),
-//         }
-//     }
-// }
-
-// // zbus errors
-// #[cfg(feature = "dbus")]
-// impl From<zbus::Error> for Error {
-//     fn from(e: zbus::Error) -> Self {
-//         Self {
-//             kind: Kind::Failed,
-//             origin: Origin::DBus,
-//             message: e.to_string(),
-//         }
-//     }
-// }
-
-// // wmi errors
-// #[cfg(windows)]
-// #[cfg(feature = "wmi")]
-// impl From<wmi::WMIError> for Error {
-//     fn from(e: wmi::WMIError) -> Self {
-//         let kind = match e {
-//             wmi::WMIError::ConvertBoolError(_)
-//             | wmi::WMIError::ConvertStringError(_)
-//             | wmi::WMIError::ConvertLengthError(_)
-//             | wmi::WMIError::ConvertDatetimeError(_)
-//             | wmi::WMIError::ConvertDurationError(_)
-//             | wmi::WMIError::ConvertVariantError(_)
-//             | wmi::WMIError::ConvertError(_) => Kind::Unconverted,
-//             wmi::WMIError::DeserializeValueError(_)
-//             | wmi::WMIError::InvalidDeserializationVariantError(_)
-//             | wmi::WMIError::SerdeError(_) => Kind::Invalid,
-//             wmi::WMIError::ParseDatetimeError(_)
-//             | wmi::WMIError::ParseFloatError(_)
-//             | wmi::WMIError::ParseIntError(_) => Kind::Unparsed,
-//             wmi::WMIError::UnimplementedArrayItem => Kind::Unavailable,
-//             _ => Kind::Failed,
-//         };
-//         Self {
-//             kind,
-//             origin: Origin::Wmi,
-//             message: e.to_string(),
-//         }
-//     }
-// }
-
-// // resource locking errors
-// impl<T> From<PoisonError<T>> for Error {
-//     fn from(_: PoisonError<T>) -> Self {
-//         Self {
-//             kind: Kind::Failed,
-//             origin: Origin::Sync,
-//             message: ERR_LOCK_FAILED.to_owned(),
-//         }
-//     }
-// }
 
 // errors based on the unit type
 impl From<()> for Error {
@@ -218,6 +184,7 @@ impl From<()> for Error {
         Self {
             kind: Kind::Failed,
             origin: Origin::Unit,
+            code: ERR_CODE_GENERIC,
             message: ERR_FAILED.to_owned(),
         }
     }
@@ -227,10 +194,11 @@ impl From<()> for Error {
 impl Error {
     // this is used only to natively create an instance of `Error`: only
     // conversions set the `origin` property to something different
-    pub fn new(kind: Kind, message: &str) -> Self {
+    pub fn new(kind: Kind, code: i64, message: &str) -> Self {
         Self {
             kind,
             origin: Origin::Native,
+            code: code,
             message: message.to_string(),
         }
     }
@@ -244,6 +212,10 @@ impl Error {
         &self.origin
     }
 
+    pub fn code(&self) -> i64 {
+        self.code
+    }
+
     pub fn message(&self) -> &str {
         &self.message
     }
@@ -255,6 +227,7 @@ impl<T: std::error::Error> From<Box<T>> for Error {
         Self {
             kind: Kind::Unknown,
             origin: Origin::Unknown,
+            code: ERR_CODE_GENERIC,
             message: e.to_string(),
         }
     }

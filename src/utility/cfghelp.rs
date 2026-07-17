@@ -8,8 +8,8 @@
 use cfgmap::CfgMap;
 use regex::Regex;
 
-use crate::utility::result::{Error, Kind, Result};
 use crate::constants::*;
+use crate::utility::result::{Error, Kind, Result};
 
 /// use this to specify that a configuration element is mandatory
 ///
@@ -57,6 +57,7 @@ macro_rules! cfg_mandatory {
 pub fn cfg_err_invalid_config(key: &str, value: &str, message: &str) -> Error {
     Error::new(
         Kind::Invalid,
+        ERR_CODE_INVALID_CONFIG_FILE,
         &format!("{ERR_INVALID_CONFIG}: ({key}={value}) {message}"),
     )
 }
