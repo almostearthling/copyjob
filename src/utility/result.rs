@@ -4,6 +4,7 @@
 #![allow(dead_code)]
 
 use std::{self, fmt};
+use bstr::*;
 
 use crate::constants::*;
 
@@ -118,6 +119,7 @@ pub enum Origin {
     Native,
     Unit,
     StdIo,
+    Utf8,
     Unknown,
 }
 
@@ -130,6 +132,7 @@ impl fmt::Display for Origin {
                 Origin::Native => "self",
                 Origin::Unit => "unit",
                 Origin::StdIo => "io",
+                Origin::Utf8 => "utf8",
                 Origin::Unknown => "unknown",
             }
         )
@@ -179,6 +182,17 @@ impl From<std::io::Error> for Error {
     }
 }
 
+impl From<Utf8Error> for Error {
+    fn from(value: Utf8Error) -> Self {
+        Self {
+            kind: Kind::Unconverted,
+            origin: Origin::Utf8,
+            code: ERR_CODE_GENERIC,
+            message: value.to_string(),
+        }
+    }
+}
+
 // errors based on the unit type
 impl From<()> for Error {
     fn from(_: ()) -> Self {
@@ -195,11 +209,20 @@ impl From<()> for Error {
 impl Error {
     // this is used only to natively create an instance of `Error`: only
     // conversions set the `origin` property to something different
-    pub fn new(kind: Kind, code: i64, message: &str) -> Self {
+    pub fn new(kind: Kind, code: i64) -> Self {
         Self {
             kind,
             origin: Origin::Native,
-            code: code,
+            code,
+            message: code_to_str_readable(code).to_string(),
+        }
+    }
+
+    pub fn new_with_message(kind: Kind, code: i64, message: &str) -> Self {
+        Self {
+            kind,
+            origin: Origin::Native,
+            code,
             message: message.to_string(),
         }
     }

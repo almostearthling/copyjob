@@ -14,8 +14,10 @@ use std::io::Read;
 use lazy_static::lazy_static;
 
 use std::collections::HashMap;
+// use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
+use bstr::*;
 use regex::{Regex, RegexBuilder};
 
 use dirs::home_dir;
@@ -106,6 +108,9 @@ lazy_static! {
     // corresponding RE_VARMENTION_* instance
     static ref FMT_VARMENTION_LOC: String = String::from("%{*}");
     static ref FMT_VARMENTION_ENV: String = String::from("${*}");
+
+    // regexs to normalize slashes
+    static ref RE_NORMALIZE_SLASHES: Regex = Regex::new(if cfg!(windows) { "\\[\\]+" } else { "/[/]+" }).unwrap();
 }
 
 // helper to convert a list of regexp patterns into a single ORed regexp
@@ -184,16 +189,21 @@ fn format_output_parsable(
     .to_string()
 }
 
-/// This make variables and markers replacement easier
+/// This makes variables and markers replacement easier
 ///
 /// Note: it only works with strings, which can be converted to `PathBuf`
-trait ReplaceableVarString {
-    fn replace_start(&self, vars: &HashMap<&str, &str>) -> Self;
-    fn replace_vars(&self, pattern: &Regex, format: &str, vars: &HashMap<&str, &str>) -> Self;
+trait CanReplaceVars: Sized {
+    fn replace_start(&self, vars: &HashMap<&str, Self>) -> Result<Self>;
+    fn replace_vars(
+        &self,
+        pattern: &Regex,
+        format: &str,
+        vars: &HashMap<&str, Self>,
+    ) -> Result<Self>;
 }
 
-impl ReplaceableVarString for String {
-    fn replace_start(&self, vars: &HashMap<&str, &str>) -> Self {
+impl CanReplaceVars for String {
+    fn replace_start(&self, vars: &HashMap<&str, String>) -> Result<Self> {
         let mut s = String::from(self);
         for (k, v) in vars {
             if s.starts_with(k) {
@@ -201,10 +211,15 @@ impl ReplaceableVarString for String {
                 break;
             }
         }
-        s
+        Ok(s)
     }
 
-    fn replace_vars(&self, pattern: &Regex, format: &str, vars: &HashMap<&str, &str>) -> Self {
+    fn replace_vars(
+        &self,
+        pattern: &Regex,
+        format: &str,
+        vars: &HashMap<&str, String>,
+    ) -> Result<Self> {
         let mut result = String::from(self);
         // mimick shell by replacing undefined variables with the empty string:
         // since the same function is used for both local and environment vars,
@@ -222,7 +237,66 @@ impl ReplaceableVarString for String {
                 result = result.replace(&occurrence, "");
             }
         }
-        result
+        Ok(result)
+    }
+}
+
+impl CanReplaceVars for PathBuf {
+    fn replace_start(&self, vars: &HashMap<&str, PathBuf>) -> Result<PathBuf> {
+        let mut s = PathBuf::from(self);
+        for (k, v) in vars {
+            if s.starts_with(k) {
+                s = PathBuf::from(
+                    s.as_os_str()
+                        .as_encoded_bytes()
+                        .replace(k, v.as_os_str().as_encoded_bytes().as_bstr())
+                        .as_bstr()
+                        .to_path()?,
+                );
+                break;
+            }
+        }
+        Ok(s)
+    }
+
+    fn replace_vars(
+        &self,
+        pattern: &Regex,
+        format: &str,
+        vars: &HashMap<&str, PathBuf>,
+    ) -> Result<PathBuf> {
+        let mut result = PathBuf::from(self);
+        // mimick shell by replacing undefined variables with the empty string:
+        // since the same function is used for both local and environment vars,
+        // this represents a difference with the Python version, that considered
+        // mentioning an undefined local variable a fatal error
+        // WARNING: this actually assumes that the regular expression pattern
+        //          "[%$]\{[a-zA-Z_][a-zA-Z0-9_]*\}" cannot appear in the source or
+        //          the destination directory within job definitions
+        // WARNING: conversion from bytes to a string to a str may b lossy
+        while let Some(caps) = pattern.captures(
+            result
+                .as_os_str()
+                .as_encoded_bytes()
+                .as_bstr()
+                .to_string()
+                .as_str(),
+        ) {
+            let varname = caps.get(1).map_or("", |m| m.as_str());
+            let occurrence = format.replace("*", varname);
+            let bs = result.as_os_str().as_encoded_bytes();
+            if let Some(replacement) = vars.get(varname) {
+                let bs = bs.replace(
+                    occurrence.as_bytes(),
+                    replacement.as_os_str().as_encoded_bytes(),
+                );
+                result = PathBuf::from(bs.to_path()?);
+            } else {
+                let bs = bs.replace(occurrence.as_bytes(), "".as_bytes());
+                result = PathBuf::from(bs.to_path()?);
+            }
+        }
+        Ok(result)
     }
 }
 
@@ -247,47 +321,49 @@ fn extract_config(
 ) -> Result<(CopyJobGlobalConfig, Vec<CopyJobConfig>)> {
     // local helpers:
 
-    // l1. create a specific error
+    // create a specific error
     fn _ec_error_invalid_config(key: &str) -> Error {
-        Error::new(
+        Error::new_with_message(
             Kind::Invalid,
             ERR_CODE_INVALID_CONFIG_FILE,
             format!(
                 "{}:{key}",
-                code_to_str_parsable(ERR_CODE_INVALID_CONFIG_FILE).to_string()
+                code_to_str_parsable(ERR_CODE_INVALID_CONFIG_FILE)
             )
             .as_str(),
         )
     }
 
-    // l4. normalize path slashes (forward+back & multiple)
-    fn _ec_normalize_path_slashes(path: &str) -> String {
-        if cfg!(windows) {
-            Regex::new("\\[\\]+")
-                .unwrap() // cannot panic for we know the RE is correct
-                .replace_all(&path.replace("/", "\\"), "\\")
-                .to_string()
+    // normalize path slashes (forward+back & multiple)
+    fn _ec_normalize_path_slashes(path: &Path) -> Option<PathBuf> {
+        let s = path.as_os_str().to_str()?;
+        let s0;
+        let s1 = if cfg!(windows) {
+            s0 = s.replace("/", "\\");
+            s0.as_str()
         } else {
-            Regex::new("/[/]+")
-                .unwrap() // cannot panic for we know the RE is correct
-                .replace_all(&path.replace("\\", "/"), "/")
-                .to_string()
-        }
+            s
+        };
+        Some(PathBuf::from(
+            RE_NORMALIZE_SLASHES
+                .replace_all(s1, if cfg!(windows) { "\\" } else { "/" })
+                .to_string(),
+        ))
     }
 
     // l5. add trailing slashes
-    fn _ec_add_trailing_slashes(path: &str) -> String {
+    fn _ec_add_trailing_slashes(path: &Path) -> PathBuf {
         if cfg!(windows) {
             if path.ends_with("\\") || path.ends_with("/") {
-                String::from(path)
+                PathBuf::from(path)
             } else {
-                path.to_owned() + "\\"
+                path.join("\\")
             }
         } else {
             if path.ends_with("/") {
-                String::from(path)
+                PathBuf::from(path)
             } else {
-                path.to_owned() + "/"
+                path.join("/")
             }
         }
     }
@@ -311,9 +387,12 @@ fn extract_config(
         halt_on_errors: false,
 
         // the following parameters are defined through CLI arguments only
-        config_file: PathBuf::from(_ec_normalize_path_slashes(&String::from(
-            config_file.as_os_str().to_str().unwrap(),
-        ))),
+        config_file: _ec_normalize_path_slashes(config_file).unwrap_or(Err(
+            _ec_error_invalid_config(&format!(
+                "FIXME: invalid config `{}`",
+                &config_file.to_string_lossy(),
+            )),
+        )?),
         verbose,
         parsable_output,
     };
@@ -339,11 +418,7 @@ fn extract_config(
     let config_map = match toml::from_str(fs::read_to_string(config_file)?.as_str()) {
         Ok(toml_text) => CfgMap::from_toml(toml_text),
         _ => {
-            return Err(Error::new(
-                Kind::Invalid,
-                ERR_CODE_INVALID_CONFIG_FILE,
-                code_to_str_parsable(ERR_CODE_INVALID_CONFIG_FILE),
-            ));
+            return Err(Error::new(Kind::Invalid, ERR_CODE_INVALID_CONFIG_FILE));
         }
     };
 
@@ -358,34 +433,13 @@ fn extract_config(
     let var_user_home = home_dir().unwrap();
     let var_config_file_dir = PathBuf::from(config_file.clone().parent().unwrap());
 
-    let separator = if cfg!(windows) { "\\" } else { "/" };
-    let mut markers: HashMap<&str, String> = HashMap::new();
+    let separator = PathBuf::from(if cfg!(windows) { "\\" } else { "/" });
+    let mut markers: HashMap<&str, PathBuf> = HashMap::new();
+    markers.insert("~/", var_user_home.clone());
+    markers.insert("@/", var_config_file_dir.clone());
     if cfg!(windows) {
-        markers.insert(
-            "~/",
-            format!("{}{separator}", var_user_home.to_string_lossy()),
-        );
-        markers.insert(
-            "@/",
-            format!("{}{separator}", var_config_file_dir.to_string_lossy()),
-        );
-        markers.insert(
-            "~\\",
-            format!("{}{separator}", var_user_home.to_string_lossy()),
-        );
-        markers.insert(
-            "@\\",
-            format!("{}{separator}", var_config_file_dir.to_string_lossy()),
-        );
-    } else {
-        markers.insert(
-            "~/",
-            format!("{}{separator}", var_user_home.to_string_lossy()),
-        );
-        markers.insert(
-            "@/",
-            format!("{}{separator}", var_config_file_dir.to_string_lossy()),
-        );
+        markers.insert("~\\", var_user_home);
+        markers.insert("@\\", var_config_file_dir);
     }
 
     let mut sys_variables: HashMap<String, String> = HashMap::new();
@@ -495,68 +549,72 @@ fn extract_config(
                     };
                     let job_map = job_entry.as_map().unwrap();
                     job.job_name =
-                        cfg_mandatory!(cfg_string_check_regex(&job_map, "name", &RE_JOBNAME))?
+                        cfg_mandatory!(cfg_string_check_regex(job_map, "name", &RE_JOBNAME))?
                             .unwrap();
-                    job.source_dir = PathBuf::from({
-                        _ec_normalize_path_slashes(&_ec_add_trailing_slashes(
-                            &(cfg_mandatory!(cfg_string(&job_map, "source"))?
-                                .unwrap()
-                                .replace_start(
-                                    &markers.iter().map(|(k, v)| (*k, v.as_str())).collect(),
-                                )
-                                .replace_vars(
-                                    &RE_VARMENTION_LOC,
-                                    &FMT_VARMENTION_LOC,
-                                    &global_config
-                                        .variables
-                                        .iter()
-                                        .map(|(k, v)| (k.as_str(), v.as_str()))
-                                        .collect(),
-                                )
-                                .replace_vars(
-                                    &RE_VARMENTION_ENV,
-                                    &FMT_VARMENTION_ENV,
-                                    &sys_variables
-                                        .iter()
-                                        .map(|(k, v)| (k.as_str(), v.as_str()))
-                                        .collect(),
-                                )
-                                + separator),
-                        ))
-                    });
-                    job.destination_dir = PathBuf::from({
-                        _ec_normalize_path_slashes(&_ec_add_trailing_slashes(
-                            &(cfg_mandatory!(cfg_string(&job_map, "destination"))?
-                                .unwrap()
-                                .replace_start(
-                                    &markers.iter().map(|(k, v)| (*k, v.as_str())).collect(),
-                                )
-                                .replace_vars(
-                                    &RE_VARMENTION_LOC,
-                                    &FMT_VARMENTION_LOC,
-                                    &global_config
-                                        .variables
-                                        .iter()
-                                        .map(|(k, v)| (k.as_str(), v.as_str()))
-                                        .collect(),
-                                )
-                                .replace_vars(
-                                    &RE_VARMENTION_ENV,
-                                    &FMT_VARMENTION_ENV,
-                                    &sys_variables
-                                        .iter()
-                                        .map(|(k, v)| (k.as_str(), v.as_str()))
-                                        .collect(),
-                                )
-                                + separator),
-                        ))
-                    });
+                    job.source_dir = _ec_normalize_path_slashes(
+                        _ec_add_trailing_slashes(
+                            PathBuf::from(
+                                &(cfg_mandatory!(cfg_string(job_map, "source"))?.unwrap()),
+                            )
+                            .replace_start(&markers.iter().map(|(k, v)| (*k, v.clone())).collect())?
+                            .replace_vars(
+                                &RE_VARMENTION_LOC,
+                                &FMT_VARMENTION_LOC,
+                                &global_config
+                                    .variables
+                                    .iter()
+                                    .map(|(k, v)| (k.as_str(), PathBuf::from(v)))
+                                    .collect(),
+                            )?
+                            .replace_vars(
+                                &RE_VARMENTION_ENV,
+                                &FMT_VARMENTION_ENV,
+                                &sys_variables
+                                    .iter()
+                                    .map(|(k, v)| (k.as_str(), PathBuf::from(v)))
+                                    .collect(),
+                            )?
+                            .join(separator.clone())
+                            .as_path(),
+                        )
+                        .as_path(),
+                    )
+                    .unwrap_or(Err(_ec_error_invalid_config("FIXME: job.source_dir"))?);
+                    job.destination_dir = _ec_normalize_path_slashes(
+                        _ec_add_trailing_slashes(
+                            PathBuf::from(
+                                &(cfg_mandatory!(cfg_string(job_map, "destination"))?.unwrap()),
+                            )
+                            .replace_start(&markers.iter().map(|(k, v)| (*k, v.clone())).collect())?
+                            .replace_vars(
+                                &RE_VARMENTION_LOC,
+                                &FMT_VARMENTION_LOC,
+                                &global_config
+                                    .variables
+                                    .iter()
+                                    .map(|(k, v)| (k.as_str(), PathBuf::from(v)))
+                                    .collect(),
+                            )?
+                            .replace_vars(
+                                &RE_VARMENTION_ENV,
+                                &FMT_VARMENTION_ENV,
+                                &sys_variables
+                                    .iter()
+                                    .map(|(k, v)| (k.as_str(), PathBuf::from(v)))
+                                    .collect(),
+                            )?
+                            .join(separator.clone())
+                            .as_path(),
+                        )
+                        .as_path(),
+                    )
+                    .unwrap_or(Err(_ec_error_invalid_config("FIXME: job.destination_dir"))?);
                     job.include_pattern = combine_regexp_patterns(
-                        &cfg_mandatory!(cfg_vec_string(&job_map, "patterns_include"))?.unwrap(),
+                        &cfg_mandatory!(cfg_vec_string(job_map, "patterns_include"))?.unwrap(),
                     );
-                    job.exclude_pattern = cfg_vec_string(&job_map, "patterns_exclude")?
+                    job.exclude_pattern = cfg_vec_string(job_map, "patterns_exclude")?
                         .map_or(job.exclude_pattern, |v| combine_regexp_patterns(&v));
-                    job.excludedir_pattern = cfg_vec_string(&job_map, "patterns_exclude_dir")?
+                    job.excludedir_pattern = cfg_vec_string(job_map, "patterns_exclude_dir")?
                         .map_or(job.excludedir_pattern, |v| combine_regexp_patterns(&v));
                     job.recursive = cfg_bool(job_map, "recursive")?.unwrap_or(job.recursive);
                     job.case_sensitive =
@@ -681,14 +739,13 @@ fn list_files_matching(
                 // a value of '*' as directory reports an error ('reserved' on both Unix&Win)
                 String::from("*")
             };
-            if subdir_name != "*" && !excludedir_match.is_match(&subdir_name) {
-                if let Some(file_name) = entry.path().file_name() {
-                    if include_match.is_match(file_name.to_str().unwrap_or(""))
-                        && !exclude_match.is_match(file_name.to_str().unwrap_or(""))
-                    {
-                        result.push(PathBuf::from(entry.path()));
-                    }
-                }
+            if subdir_name != "*"
+                && !excludedir_match.is_match(&subdir_name)
+                && let Some(file_name) = entry.path().file_name()
+                && include_match.is_match(file_name.to_str().unwrap_or(""))
+                && !exclude_match.is_match(file_name.to_str().unwrap_or(""))
+            {
+                result.push(PathBuf::from(entry.path()));
             }
         }
     }
@@ -741,26 +798,14 @@ fn copy_file(
         Ok(s_stat) => {
             // first check that source <> destination
             if source_path == destination_path {
-                return Err(Error::new(
-                    Kind::Invalid,
-                    FOERR_DESTINATION_IS_ITSELF,
-                    code_to_str_readable(FOERR_DESTINATION_IS_ITSELF),
-                ));
+                return Err(Error::new(Kind::Invalid, FOERR_DESTINATION_IS_ITSELF));
             }
             if s_stat.is_dir() {
-                return Err(Error::new(
-                    Kind::Invalid,
-                    FOERR_SOURCE_IS_DIR,
-                    code_to_str_readable(FOERR_SOURCE_IS_DIR),
-                ));
+                return Err(Error::new(Kind::Invalid, FOERR_SOURCE_IS_DIR));
             }
             if s_stat.is_symlink() && !follow_symlinks {
                 // TODO: is it expected?
-                return Err(Error::new(
-                    Kind::Forbidden,
-                    FOERR_SOURCE_IS_SYMLINK,
-                    code_to_str_readable(FOERR_SOURCE_IS_SYMLINK),
-                ));
+                return Err(Error::new(Kind::Forbidden, FOERR_SOURCE_IS_SYMLINK));
             }
             match metadata(&destination_path) {
                 Ok(d_stat) => {
@@ -768,23 +813,11 @@ fn copy_file(
                     // whether overwrite is false, compare s_stat, d_stat and
                     // possibly hashes
                     if !overwrite {
-                        return Err(Error::new(
-                            Kind::Forbidden,
-                            FOERR_DESTINATION_EXISTS,
-                            code_to_str_readable(FOERR_DESTINATION_EXISTS),
-                        ));
+                        return Err(Error::new(Kind::Forbidden, FOERR_DESTINATION_EXISTS));
                     } else if d_stat.is_dir() {
-                        return Err(Error::new(
-                            Kind::Invalid,
-                            FOERR_DESTINATION_IS_DIR,
-                            code_to_str_readable(FOERR_DESTINATION_IS_DIR),
-                        ));
+                        return Err(Error::new(Kind::Invalid, FOERR_DESTINATION_IS_DIR));
                     } else if d_stat.is_symlink() && !follow_symlinks {
-                        return Err(Error::new(
-                            Kind::Forbidden,
-                            FOERR_DESTINATION_IS_SYMLINK,
-                            code_to_str_readable(FOERR_DESTINATION_IS_SYMLINK),
-                        ));
+                        return Err(Error::new(Kind::Forbidden, FOERR_DESTINATION_IS_SYMLINK));
                     }
                     if skip_newer {
                         match s_stat.modified() {
@@ -794,7 +827,6 @@ fn copy_file(
                                         return Err(Error::new(
                                             Kind::Invalid,
                                             FOERR_DESTINATION_IS_NEWER,
-                                            code_to_str_readable(FOERR_DESTINATION_IS_NEWER),
                                         ));
                                     }
                                 }
@@ -802,7 +834,6 @@ fn copy_file(
                                     return Err(Error::new(
                                         Kind::Unavailable,
                                         FOERR_DESTINATION_NOT_ACCESSIBLE,
-                                        code_to_str_readable(FOERR_DESTINATION_NOT_ACCESSIBLE),
                                     ));
                                 }
                             },
@@ -811,7 +842,6 @@ fn copy_file(
                                 return Err(Error::new(
                                     Kind::Unavailable,
                                     FOERR_SOURCE_NOT_ACCESSIBLE,
-                                    code_to_str_readable(FOERR_SOURCE_NOT_ACCESSIBLE),
                                 ));
                             }
                         }
@@ -826,7 +856,6 @@ fn copy_file(
                                         return Err(Error::new(
                                             Kind::Invalid,
                                             FOERR_DESTINATION_IS_IDENTICAL,
-                                            code_to_str_readable(FOERR_DESTINATION_IS_IDENTICAL),
                                         ));
                                     }
                                 }
@@ -834,7 +863,6 @@ fn copy_file(
                                     return Err(Error::new(
                                         Kind::Unavailable,
                                         FOERR_DESTINATION_NOT_ACCESSIBLE,
-                                        code_to_str_readable(FOERR_DESTINATION_NOT_ACCESSIBLE),
                                     ));
                                 }
                             },
@@ -842,7 +870,6 @@ fn copy_file(
                                 return Err(Error::new(
                                     Kind::Unavailable,
                                     FOERR_SOURCE_NOT_ACCESSIBLE,
-                                    code_to_str_readable(FOERR_SOURCE_NOT_ACCESSIBLE),
                                 ));
                             }
                         }
@@ -859,20 +886,12 @@ fn copy_file(
                     //       CANNOT_CREATE_DIR error is propagated
                     let mut destination_dir = PathBuf::from(&destination_path);
                     if !destination_dir.pop() {
-                        return Err(Error::new(
-                            Kind::Forbidden,
-                            FOERR_CANNOT_CREATE_DIR,
-                            code_to_str_readable(FOERR_CANNOT_CREATE_DIR),
-                        ));
+                        return Err(Error::new(Kind::Forbidden, FOERR_CANNOT_CREATE_DIR));
                     }
                     match metadata(&destination_dir) {
                         Ok(d_dirdata) => {
                             if !d_dirdata.is_dir() {
-                                return Err(Error::new(
-                                    Kind::Forbidden,
-                                    FOERR_CANNOT_CREATE_DIR,
-                                    code_to_str_readable(FOERR_CANNOT_CREATE_DIR),
-                                ));
+                                return Err(Error::new(Kind::Forbidden, FOERR_CANNOT_CREATE_DIR));
                             }
                         }
                         Err(_) => {
@@ -881,18 +900,10 @@ fn copy_file(
                             // out on directory creation errors; otherwise it
                             // is safe to go on without further checks
                             if !create_directories {
-                                return Err(Error::new(
-                                    Kind::Forbidden,
-                                    FOERR_CANNOT_CREATE_DIR,
-                                    code_to_str_readable(FOERR_CANNOT_CREATE_DIR),
-                                ));
+                                return Err(Error::new(Kind::Forbidden, FOERR_CANNOT_CREATE_DIR));
                             }
                             if create_dir_all(&destination_dir).is_err() {
-                                return Err(Error::new(
-                                    Kind::Forbidden,
-                                    FOERR_CANNOT_CREATE_DIR,
-                                    code_to_str_readable(FOERR_CANNOT_CREATE_DIR),
-                                ));
+                                return Err(Error::new(Kind::Forbidden, FOERR_CANNOT_CREATE_DIR));
                             }
                         }
                     }
@@ -915,26 +926,14 @@ fn copy_file(
                 }
                 Err(res_err) => {
                     if res_err.kind() == std::io::ErrorKind::PermissionDenied {
-                        Err(Error::new(
-                            Kind::Forbidden,
-                            FOERR_DESTINATION_IS_READONLY,
-                            code_to_str_readable(FOERR_DESTINATION_IS_READONLY),
-                        ))
+                        Err(Error::new(Kind::Forbidden, FOERR_DESTINATION_IS_READONLY))
                     } else {
-                        Err(Error::new(
-                            Kind::Unknown,
-                            ERR_CODE_GENERIC,
-                            code_to_str_readable(ERR_CODE_GENERIC),
-                        ))
+                        Err(Error::new(Kind::Unknown, ERR_CODE_GENERIC))
                     }
                 }
             }
         }
-        Err(_) => Err(Error::new(
-            Kind::Unavailable,
-            FOERR_SOURCE_NOT_ACCESSIBLE,
-            code_to_str_readable(FOERR_SOURCE_NOT_ACCESSIBLE),
-        )),
+        Err(_) => Err(Error::new(Kind::Unavailable, FOERR_SOURCE_NOT_ACCESSIBLE)),
     }
 }
 
@@ -952,17 +951,9 @@ fn remove_file(destination: &Path, follow_symlinks: bool, trash_on_delete: bool)
         Ok(d_stat) => {
             // if we are here, then destination exists
             if d_stat.is_dir() {
-                Err(Error::new(
-                    Kind::Invalid,
-                    FOERR_DESTINATION_IS_DIR,
-                    code_to_str_readable(FOERR_DESTINATION_IS_DIR),
-                ))
+                Err(Error::new(Kind::Invalid, FOERR_DESTINATION_IS_DIR))
             } else if d_stat.is_symlink() && !follow_symlinks {
-                Err(Error::new(
-                    Kind::Invalid,
-                    FOERR_DESTINATION_IS_SYMLINK,
-                    code_to_str_readable(FOERR_DESTINATION_IS_SYMLINK),
-                ))
+                Err(Error::new(Kind::Invalid, FOERR_DESTINATION_IS_SYMLINK))
             } else if trash_on_delete {
                 if trash::delete(&destination_path).is_err() {
                     if fs::remove_file(destination_path).is_ok() {
@@ -971,7 +962,6 @@ fn remove_file(destination: &Path, follow_symlinks: bool, trash_on_delete: bool)
                         Err(Error::new(
                             Kind::Unavailable,
                             FOERR_DESTINATION_NOT_ACCESSIBLE,
-                            code_to_str_readable(FOERR_DESTINATION_NOT_ACCESSIBLE),
                         ))
                     }
                 } else {
@@ -983,14 +973,12 @@ fn remove_file(destination: &Path, follow_symlinks: bool, trash_on_delete: bool)
                 Err(Error::new(
                     Kind::Unavailable,
                     FOERR_DESTINATION_NOT_ACCESSIBLE,
-                    code_to_str_readable(FOERR_DESTINATION_NOT_ACCESSIBLE),
                 ))
             }
         }
         Err(_) => Err(Error::new(
             Kind::Unavailable,
             FOERR_DESTINATION_NOT_ACCESSIBLE,
-            code_to_str_readable(FOERR_DESTINATION_NOT_ACCESSIBLE),
         )),
     }
 }
@@ -1136,11 +1124,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                 )
             );
         }
-        return Err(Error::new(
-            Kind::Unavailable,
-            CJERR_SOURCE_DIR_NOT_EXISTS,
-            code_to_str_readable(CJERR_SOURCE_DIR_NOT_EXISTS),
-        ));
+        return Err(Error::new(Kind::Unavailable, CJERR_SOURCE_DIR_NOT_EXISTS));
     }
     if !job.destination_dir.exists() && !job.create_directories {
         if verbose {
@@ -1159,7 +1143,6 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
         return Err(Error::new(
             Kind::Unavailable,
             CJERR_DESTINATION_DIR_NOT_EXISTS,
-            code_to_str_readable(CJERR_DESTINATION_DIR_NOT_EXISTS),
         ));
     }
 
@@ -1272,11 +1255,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                                 );
                             }
                             if job.halt_on_errors {
-                                return Err(Error::new(
-                                    Kind::Failed,
-                                    CJERR_HALT_ON_COPY_ERROR,
-                                    code_to_str_readable(CJERR_HALT_ON_COPY_ERROR),
-                                ));
+                                return Err(Error::new(Kind::Failed, CJERR_HALT_ON_COPY_ERROR));
                             };
                         }
                     };
@@ -1295,11 +1274,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                         );
                     }
                     if job.halt_on_errors {
-                        return Err(Error::new(
-                            Kind::Failed,
-                            CJERR_HALT_ON_COPY_ERROR,
-                            code_to_str_readable(CJERR_HALT_ON_COPY_ERROR),
-                        ));
+                        return Err(Error::new(Kind::Failed, CJERR_HALT_ON_COPY_ERROR));
                     }
                 }
             }
@@ -1337,11 +1312,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                             );
                         }
                         if job.halt_on_errors {
-                            return Err(Error::new(
-                                Kind::Failed,
-                                CJERR_HALT_ON_COPY_ERROR,
-                                code_to_str_readable(CJERR_HALT_ON_COPY_ERROR),
-                            ));
+                            return Err(Error::new(Kind::Failed, CJERR_HALT_ON_COPY_ERROR));
                         };
                     }
                 }
@@ -1374,11 +1345,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                     )
                 );
             }
-            return Err(Error::new(
-                Kind::Unavailable,
-                CJERR_NO_SOURCE_FILES,
-                code_to_str_readable(CJERR_NO_SOURCE_FILES),
-            ));
+            return Err(Error::new(Kind::Unavailable, CJERR_NO_SOURCE_FILES));
         }
     }
 
