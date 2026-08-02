@@ -2,6 +2,7 @@
 //! An utility to perform complex copy operations based on TOML files
 //! (c) 2023-2026, Francesco Garosi
 
+use std::ffi::OsString;
 use std::fs;
 use std::fs::File;
 use std::fs::create_dir_all;
@@ -62,21 +63,21 @@ struct CopyJobConfig {
 
 #[derive(Debug)]
 struct CopyJobGlobalConfig {
-    active_jobs: Vec<String>,           // list of active jobs in config (names)
-    job_list: Vec<String>,              // list of all job names found in config
-    variables: HashMap<String, String>, // variables/values defined in config
-    recursive: bool,                    // recurse directories
-    case_sensitive: bool,               // consider filenames as case sensitive
-    follow_symlinks: bool,              // follow symlinks
-    overwrite: bool,                    // possibly overwrite destination
-    skip_newer: bool,                   // do not overwrite more recent files
-    check_content: bool,                // check whether contents are the same
-    remove_others_matching: bool,       // remove matching files not present in source
-    create_directories: bool,           // create non-existing directories
-    keep_structure: bool,               // keep directory structure as in source
-    trash_on_delete: bool,              // use garbage bin instead of deleting
-    trash_on_overwrite: bool,           // send to garbage bin before overwrite
-    halt_on_errors: bool,               // exit job if an error occurs
+    active_jobs: Vec<String>, // list of active jobs in config (names)
+    job_list: Vec<String>,    // list of all job names found in config
+    variables: HashMap<OsString, OsString>, // variables/values defined in config
+    recursive: bool,          // recurse directories
+    case_sensitive: bool,     // consider filenames as case sensitive
+    follow_symlinks: bool,    // follow symlinks
+    overwrite: bool,          // possibly overwrite destination
+    skip_newer: bool,         // do not overwrite more recent files
+    check_content: bool,      // check whether contents are the same
+    remove_others_matching: bool, // remove matching files not present in source
+    create_directories: bool, // create non-existing directories
+    keep_structure: bool,     // keep directory structure as in source
+    trash_on_delete: bool,    // use garbage bin instead of deleting
+    trash_on_overwrite: bool, // send to garbage bin before overwrite
+    halt_on_errors: bool,     // exit job if an error occurs
 
     // the following parameters are defined through CLI arguments only
     config_file: PathBuf,  // configuration file path
@@ -193,17 +194,17 @@ fn format_output_parsable(
 ///
 /// Note: it only works with strings, which can be converted to `PathBuf`
 trait CanReplaceVars: Sized {
-    fn replace_start(&self, vars: &HashMap<&str, Self>) -> Result<Self>;
+    fn replace_start(&self, vars: &HashMap<Self, Self>) -> Result<Self>;
     fn replace_vars(
         &self,
         pattern: &Regex,
         format: &str,
-        vars: &HashMap<&str, Self>,
+        vars: &HashMap<Self, Self>,
     ) -> Result<Self>;
 }
 
 impl CanReplaceVars for String {
-    fn replace_start(&self, vars: &HashMap<&str, String>) -> Result<Self> {
+    fn replace_start(&self, vars: &HashMap<String, String>) -> Result<Self> {
         let mut s = String::from(self);
         for (k, v) in vars {
             if s.starts_with(k) {
@@ -218,7 +219,7 @@ impl CanReplaceVars for String {
         &self,
         pattern: &Regex,
         format: &str,
-        vars: &HashMap<&str, String>,
+        vars: &HashMap<String, String>,
     ) -> Result<Self> {
         let mut result = String::from(self);
         // mimick shell by replacing undefined variables with the empty string:
@@ -241,15 +242,18 @@ impl CanReplaceVars for String {
     }
 }
 
-impl CanReplaceVars for PathBuf {
-    fn replace_start(&self, vars: &HashMap<&str, PathBuf>) -> Result<PathBuf> {
-        let mut s = PathBuf::from(self);
+impl CanReplaceVars for OsString {
+    fn replace_start(&self, vars: &HashMap<OsString, OsString>) -> Result<OsString> {
+        let mut s = OsString::from(self);
         for (k, v) in vars {
-            if s.starts_with(k) {
-                s = PathBuf::from(
+            if s.as_encoded_bytes().starts_with(k.as_encoded_bytes()) {
+                s = OsString::from(
                     s.as_os_str()
                         .as_encoded_bytes()
-                        .replace(k, v.as_os_str().as_encoded_bytes().as_bstr())
+                        .replace(
+                            &k.as_encoded_bytes(),
+                            v.as_os_str().as_encoded_bytes().as_bstr(),
+                        )
                         .as_bstr()
                         .to_path()?,
                 );
@@ -263,9 +267,9 @@ impl CanReplaceVars for PathBuf {
         &self,
         pattern: &Regex,
         format: &str,
-        vars: &HashMap<&str, PathBuf>,
-    ) -> Result<PathBuf> {
-        let mut result = PathBuf::from(self);
+        vars: &HashMap<OsString, OsString>,
+    ) -> Result<OsString> {
+        let mut result = OsString::from(self);
         // mimick shell by replacing undefined variables with the empty string:
         // since the same function is used for both local and environment vars,
         // this represents a difference with the Python version, that considered
@@ -285,15 +289,15 @@ impl CanReplaceVars for PathBuf {
             let varname = caps.get(1).map_or("", |m| m.as_str());
             let occurrence = format.replace("*", varname);
             let bs = result.as_os_str().as_encoded_bytes();
-            if let Some(replacement) = vars.get(varname) {
+            if let Some(replacement) = vars.get(&OsString::from(varname)) {
                 let bs = bs.replace(
                     occurrence.as_bytes(),
                     replacement.as_os_str().as_encoded_bytes(),
                 );
-                result = PathBuf::from(bs.to_path()?);
+                result = OsString::from(bs.to_os_str()?);
             } else {
                 let bs = bs.replace(occurrence.as_bytes(), "".as_bytes());
-                result = PathBuf::from(bs.to_path()?);
+                result = OsString::from(bs.to_os_str()?);
             }
         }
         Ok(result)
@@ -442,12 +446,9 @@ fn extract_config(
         markers.insert("@\\", var_config_file_dir);
     }
 
-    let mut sys_variables: HashMap<String, String> = HashMap::new();
+    let mut sys_variables: HashMap<OsString, OsString> = HashMap::new();
     for (var, value) in env::vars_os() {
-        sys_variables.insert(
-            String::from(var.to_str().unwrap()),
-            String::from(value.to_str().unwrap()),
-        );
+        sys_variables.insert(var.clone(), value.clone());
     }
 
     // collect globals:
@@ -474,8 +475,8 @@ fn extract_config(
                         return Err(_ec_error_invalid_config(cur_key));
                     }
                     global_config.variables.insert(
-                        String::from(key.as_str()),
-                        String::from(item.as_str().unwrap()),
+                        OsString::from(key.as_str()),
+                        OsString::from(item.as_str().unwrap()),
                     );
                 }
             }
@@ -552,18 +553,23 @@ fn extract_config(
                         cfg_mandatory!(cfg_string_check_regex(job_map, "name", &RE_JOBNAME))?
                             .unwrap();
                     job.source_dir = _ec_normalize_path_slashes(
-                        _ec_add_trailing_slashes(
-                            PathBuf::from(
+                        _ec_add_trailing_slashes(&PathBuf::from({
+                            let mut s = OsString::from(
                                 &(cfg_mandatory!(cfg_string(job_map, "source"))?.unwrap()),
                             )
-                            .replace_start(&markers.iter().map(|(k, v)| (*k, v.clone())).collect())?
+                            .replace_start(
+                                &markers
+                                    .iter()
+                                    .map(|(k, v)| (OsString::from(*k), v.as_os_str().to_owned()))
+                                    .collect(),
+                            )?
                             .replace_vars(
                                 &RE_VARMENTION_LOC,
                                 &FMT_VARMENTION_LOC,
                                 &global_config
                                     .variables
                                     .iter()
-                                    .map(|(k, v)| (k.as_str(), PathBuf::from(v)))
+                                    .map(|(k, v)| (k.clone(), v.clone()))
                                     .collect(),
                             )?
                             .replace_vars(
@@ -571,28 +577,33 @@ fn extract_config(
                                 &FMT_VARMENTION_ENV,
                                 &sys_variables
                                     .iter()
-                                    .map(|(k, v)| (k.as_str(), PathBuf::from(v)))
+                                    .map(|(k, v)| (k.clone(), v.clone()))
                                     .collect(),
-                            )?
-                            .join(separator.clone())
-                            .as_path(),
-                        )
+                            )?;
+                            s.push(separator.clone());
+                            s
+                        }))
                         .as_path(),
                     )
                     .unwrap_or(Err(_ec_error_invalid_config("FIXME: job.source_dir"))?);
                     job.destination_dir = _ec_normalize_path_slashes(
-                        _ec_add_trailing_slashes(
-                            PathBuf::from(
+                        _ec_add_trailing_slashes(&PathBuf::from({
+                            let mut s = OsString::from(
                                 &(cfg_mandatory!(cfg_string(job_map, "destination"))?.unwrap()),
                             )
-                            .replace_start(&markers.iter().map(|(k, v)| (*k, v.clone())).collect())?
+                            .replace_start(
+                                &markers
+                                    .iter()
+                                    .map(|(k, v)| (OsString::from(*k), v.as_os_str().to_owned()))
+                                    .collect(),
+                            )?
                             .replace_vars(
                                 &RE_VARMENTION_LOC,
                                 &FMT_VARMENTION_LOC,
                                 &global_config
                                     .variables
                                     .iter()
-                                    .map(|(k, v)| (k.as_str(), PathBuf::from(v)))
+                                    .map(|(k, v)| (k.clone(), v.clone()))
                                     .collect(),
                             )?
                             .replace_vars(
@@ -600,12 +611,12 @@ fn extract_config(
                                 &FMT_VARMENTION_ENV,
                                 &sys_variables
                                     .iter()
-                                    .map(|(k, v)| (k.as_str(), PathBuf::from(v)))
+                                    .map(|(k, v)| (k.clone(), v.clone()))
                                     .collect(),
-                            )?
-                            .join(separator.clone())
-                            .as_path(),
-                        )
+                            )?;
+                            s.push(separator.clone());
+                            s
+                        }))
                         .as_path(),
                     )
                     .unwrap_or(Err(_ec_error_invalid_config("FIXME: job.destination_dir"))?);
