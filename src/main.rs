@@ -251,7 +251,7 @@ impl CanReplaceVars for OsString {
                     s.as_os_str()
                         .as_encoded_bytes()
                         .replace(
-                            &k.as_encoded_bytes(),
+                            k.as_encoded_bytes(),
                             v.as_os_str().as_encoded_bytes().as_bstr(),
                         )
                         .as_bstr()
@@ -357,19 +357,7 @@ fn extract_config(
 
     // l5. add trailing slashes
     fn _ec_add_trailing_slashes(path: &Path) -> PathBuf {
-        if cfg!(windows) {
-            if path.ends_with("\\") || path.ends_with("/") {
-                PathBuf::from(path)
-            } else {
-                path.join("\\")
-            }
-        } else {
-            if path.ends_with("/") {
-                PathBuf::from(path)
-            } else {
-                path.join("/")
-            }
-        }
+        path.join("")
     }
 
     // here we also set default values
@@ -394,7 +382,7 @@ fn extract_config(
         config_file: _ec_normalize_path_slashes(config_file).unwrap_or(Err(
             _ec_error_invalid_config(&format!(
                 "FIXME: invalid config `{}`",
-                &config_file.to_string_lossy(),
+                config_file.to_string_lossy(),
             )),
         )?),
         verbose,
@@ -437,7 +425,6 @@ fn extract_config(
     let var_user_home = home_dir().unwrap();
     let var_config_file_dir = PathBuf::from(config_file.clone().parent().unwrap());
 
-    let separator = PathBuf::from(if cfg!(windows) { "\\" } else { "/" });
     let mut markers: HashMap<&str, PathBuf> = HashMap::new();
     markers.insert("~/", var_user_home.clone());
     markers.insert("@/", var_config_file_dir.clone());
@@ -554,7 +541,7 @@ fn extract_config(
                             .unwrap();
                     job.source_dir = _ec_normalize_path_slashes(
                         _ec_add_trailing_slashes(&PathBuf::from({
-                            let mut s = OsString::from(
+                            OsString::from(
                                 &(cfg_mandatory!(cfg_string(job_map, "source"))?.unwrap()),
                             )
                             .replace_start(
@@ -579,16 +566,14 @@ fn extract_config(
                                     .iter()
                                     .map(|(k, v)| (k.clone(), v.clone()))
                                     .collect(),
-                            )?;
-                            s.push(separator.clone());
-                            s
+                            )?
                         }))
                         .as_path(),
                     )
-                    .unwrap_or(Err(_ec_error_invalid_config("FIXME: job.source_dir"))?);
+                    .unwrap_or(Err(_ec_error_invalid_config("source"))?);
                     job.destination_dir = _ec_normalize_path_slashes(
                         _ec_add_trailing_slashes(&PathBuf::from({
-                            let mut s = OsString::from(
+                            OsString::from(
                                 &(cfg_mandatory!(cfg_string(job_map, "destination"))?.unwrap()),
                             )
                             .replace_start(
@@ -613,13 +598,11 @@ fn extract_config(
                                     .iter()
                                     .map(|(k, v)| (k.clone(), v.clone()))
                                     .collect(),
-                            )?;
-                            s.push(separator.clone());
-                            s
+                            )?
                         }))
                         .as_path(),
                     )
-                    .unwrap_or(Err(_ec_error_invalid_config("FIXME: job.destination_dir"))?);
+                    .unwrap_or(Err(_ec_error_invalid_config("destination"))?);
                     job.include_pattern = combine_regexp_patterns(
                         &cfg_mandatory!(cfg_vec_string(job_map, "patterns_include"))?.unwrap(),
                     );
@@ -799,7 +782,7 @@ fn copy_file(
     );
     // NOTE: https://doc.rust-lang.org/nightly/std/fs/fn.canonicalize.html#errors
     //       `canonicalize` returns an error if the target does not exist, thus
-    //       we either get the canonicalied path or the original path.
+    //       we either get the canonicalized path or the original path.
 
     // a flag that keeps track of whether we are overwriting or not
     let mut overwriting = false;
@@ -932,7 +915,7 @@ fn copy_file(
             // let res = fs::copy(&source_path, &destination_path);
             match fs::copy(&source_path, &destination_path) {
                 Ok(_) => {
-                    // success is returned only here, after anactually successful operation
+                    // success is returned only here, after an actually successful operation
                     Ok(())
                 }
                 Err(res_err) => {
@@ -1017,7 +1000,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
     // local helpers:
 
     // l1. format a message (both machine readable and verbose output)
-    fn _format_message_rsj(
+    fn _format_message(
         parsable_output: bool,
         job: &str,
         operation: &str,
@@ -1071,7 +1054,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
     }
 
     // l2. format job information (both machine readable and verbose output)
-    fn _format_jobinfo_rsj(
+    fn _format_jobinfo(
         parsable_output: bool,
         job: &str,
         operation: &str,
@@ -1125,11 +1108,11 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
         if verbose {
             eprintln!(
                 "{}",
-                _format_jobinfo_rsj(
+                _format_jobinfo(
                     parsable_output,
                     &job.job_name,
                     OPERATION_JOB_BEGIN,
-                    CJERR_DESTINATION_DIR_NOT_EXISTS,
+                    CJERR_SOURCE_DIR_NOT_EXISTS,
                     0,
                     0,
                 )
@@ -1141,7 +1124,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
         if verbose {
             eprintln!(
                 "{}",
-                _format_jobinfo_rsj(
+                _format_jobinfo(
                     parsable_output,
                     &job.job_name,
                     OPERATION_JOB_BEGIN,
@@ -1187,7 +1170,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
             if verbose {
                 println!(
                     "{}",
-                    _format_jobinfo_rsj(
+                    _format_jobinfo(
                         parsable_output,
                         &job.job_name,
                         OPERATION_JOB_BEGIN,
@@ -1240,7 +1223,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                             if verbose {
                                 println!(
                                     "{}",
-                                    _format_message_rsj(
+                                    _format_message(
                                         parsable_output,
                                         &job.job_name,
                                         OPERATION_JOB_COPY,
@@ -1255,7 +1238,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                             if verbose {
                                 eprintln!(
                                     "{}",
-                                    _format_message_rsj(
+                                    _format_message(
                                         parsable_output,
                                         &job.job_name,
                                         OPERATION_JOB_COPY,
@@ -1274,7 +1257,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                     if verbose {
                         eprintln!(
                             "{}",
-                            _format_message_rsj(
+                            _format_message(
                                 parsable_output,
                                 &job.job_name,
                                 OPERATION_JOB_COPY,
@@ -1296,7 +1279,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                         if verbose {
                             println!(
                                 "{}",
-                                _format_message_rsj(
+                                _format_message(
                                     parsable_output,
                                     &job.job_name,
                                     OPERATION_JOB_DEL,
@@ -1312,7 +1295,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                         if verbose {
                             eprintln!(
                                 "{}",
-                                _format_message_rsj(
+                                _format_message(
                                     parsable_output,
                                     &job.job_name,
                                     OPERATION_JOB_DEL,
@@ -1331,7 +1314,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
             if verbose {
                 println!(
                     "{}",
-                    _format_jobinfo_rsj(
+                    _format_jobinfo(
                         parsable_output,
                         &job.job_name,
                         OPERATION_JOB_END,
@@ -1346,7 +1329,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
             if verbose {
                 eprintln!(
                     "{}",
-                    _format_jobinfo_rsj(
+                    _format_jobinfo(
                         parsable_output,
                         &job.job_name,
                         OPERATION_JOB_END,
@@ -1386,7 +1369,7 @@ fn run_jobs(
     // local helpers:
 
     // l1. format a message (both machine readable and verbose output)
-    fn _format_message_rj(parsable_output: bool, job: &str, code: i64) -> String {
+    fn _format_message(parsable_output: bool, job: &str, code: i64) -> String {
         if parsable_output {
             format_output_parsable(CONTEXT_TASK, job, code, OPERATION_JOB_END, "", "")
         } else if code == 0 {
@@ -1406,7 +1389,7 @@ fn run_jobs(
                     if global_config.verbose {
                         println!(
                             "{}",
-                            _format_message_rj(global_config.parsable_output, &job.job_name, 0)
+                            _format_message(global_config.parsable_output, &job.job_name, 0)
                         );
                     }
                 }
@@ -1414,7 +1397,7 @@ fn run_jobs(
                     if global_config.verbose {
                         println!(
                             "{}",
-                            _format_message_rj(
+                            _format_message(
                                 global_config.parsable_output,
                                 &job.job_name,
                                 err.code()
@@ -1458,7 +1441,7 @@ struct Args {
 // entry point: mandatory arguments are handled by the parser
 fn main() -> std::io::Result<()> {
     // formatter to write a message (here for coherence with other functions)
-    fn _format_message_main(
+    fn _format_message(
         parsable_output: bool,
         operation: &str,
         name: &str,
@@ -1518,7 +1501,7 @@ fn main() -> std::io::Result<()> {
             if !args.quiet {
                 println!(
                     "{}",
-                    _format_message_main(
+                    _format_message(
                         args.parsable_output,
                         OPERATION_CONFIG,
                         global.config_file.as_os_str().to_str().unwrap_or(""),
@@ -1537,7 +1520,7 @@ fn main() -> std::io::Result<()> {
                     if !args.quiet {
                         println!(
                             "{}",
-                            _format_message_main(
+                            _format_message(
                                 args.parsable_output,
                                 OPERATION_MAIN_END,
                                 "",
@@ -1553,7 +1536,7 @@ fn main() -> std::io::Result<()> {
                     if !args.quiet {
                         eprintln!(
                             "{}",
-                            _format_message_main(
+                            _format_message(
                                 args.parsable_output,
                                 OPERATION_MAIN_END,
                                 "",
@@ -1571,7 +1554,7 @@ fn main() -> std::io::Result<()> {
             if !args.quiet {
                 eprintln!(
                     "{}",
-                    _format_message_main(
+                    _format_message(
                         args.parsable_output,
                         OPERATION_MAIN_END,
                         "",

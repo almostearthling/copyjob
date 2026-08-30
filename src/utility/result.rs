@@ -3,8 +3,8 @@
 //! about what went wrong.
 #![allow(dead_code)]
 
-use std::{self, fmt};
 use bstr::*;
+use std::{self, fmt};
 
 use crate::constants::*;
 
@@ -30,8 +30,8 @@ pub fn code_to_str_parsable(code: i64) -> &'static str {
         FOERR_SOURCE_IS_SYMLINK => "FOERR_SOURCE_IS_SYMLINK",
         FOERR_SOURCE_NOT_ACCESSIBLE => "FOERR_SOURCE_NOT_ACCESSIBLE",
         CJERR_GENERIC_FAILURE => "CJERR_GENERIC_FAILURE",
-        CJERR_SOURCE_DIR_NOT_EXISTS => "CJERR_SOURCE_DIR_NOT_EXISTS",
         CJERR_DESTINATION_DIR_NOT_EXISTS => "CJERR_DESTINATION_DIR_NOT_EXISTS",
+        CJERR_SOURCE_DIR_NOT_EXISTS => "CJERR_SOURCE_DIR_NOT_EXISTS",
         CJERR_NO_SOURCE_FILES => "CJERR_NO_SOURCE_FILES",
         CJERR_CANNOT_DETERMINE_DESTFILE => "CJERR_CANNOT_DETERMINE_DESTFILE",
         CJERR_HALT_ON_COPY_ERROR => "CJERR_HALT_ON_COPY_ERROR",
@@ -61,8 +61,8 @@ pub fn code_to_str_readable(code: i64) -> &'static str {
         FOERR_SOURCE_IS_SYMLINK => "file operation: source file is a symbolic link",
         FOERR_SOURCE_NOT_ACCESSIBLE => "file operation: source file is not accessible",
         CJERR_GENERIC_FAILURE => "copy job: generic failure",
+        CJERR_DESTINATION_DIR_NOT_EXISTS => "copy job: destination directory does not exist",
         CJERR_SOURCE_DIR_NOT_EXISTS => "copy job: source directory does not exist",
-        CJERR_DESTINATION_DIR_NOT_EXISTS => "copy job: destination does not exist",
         CJERR_NO_SOURCE_FILES => "copy job: no source files found",
         CJERR_CANNOT_DETERMINE_DESTFILE => "copy job: cannot determine source",
         CJERR_HALT_ON_COPY_ERROR => "copy job: ending job after copy error",
@@ -257,5 +257,5 @@ impl<T: std::error::Error> From<Box<T>> for Error {
     }
 }
 
-/// Specific `Result` type that assumes `wres::Error` as its Err variant
+/// Specific `Result` type that assumes `result::Error` as its Err variant
 pub type Result<T> = std::result::Result<T, Error>;
