@@ -83,6 +83,7 @@ struct CopyJobGlobalConfig {
     config_file: PathBuf,  // configuration file path
     verbose: bool,         // provide output while running
     parsable_output: bool, // provide machine-readable output
+    dry_run: bool,         // just write messages, don't actually perform jobs
 }
 
 // Some constants used within the code
@@ -322,6 +323,7 @@ fn extract_config(
     config_file: &PathBuf,
     verbose: bool,
     parsable_output: bool,
+    dry_run: bool,
 ) -> Result<(CopyJobGlobalConfig, Vec<CopyJobConfig>)> {
     // local helpers:
 
@@ -387,6 +389,7 @@ fn extract_config(
         )?),
         verbose,
         parsable_output,
+        dry_run,
     };
     let mut job_configs: Vec<CopyJobConfig> = Vec::new();
     let allowed_globals = vec![
@@ -772,6 +775,7 @@ fn copy_file(
     follow_symlinks: bool,
     create_directories: bool,
     trash_on_overwrite: bool,
+    dry_run: bool,
 ) -> Result<()> {
     // normalize paths
     let source_path = PathBuf::from(&source.canonicalize().unwrap_or_default());
@@ -904,27 +908,31 @@ fn copy_file(
                 }
             }
 
-            // try to send the file to garbage bin if configured to do so
-            // and if we are actually overwriting the destination file with
-            // no opposing condition (file age, contents, accessibility, etc)
-            if overwriting && trash_on_overwrite {
-                let _ = trash::delete(&destination_path);
-            }
-
-            // actually copy the file using OS API
-            // let res = fs::copy(&source_path, &destination_path);
-            match fs::copy(&source_path, &destination_path) {
-                Ok(_) => {
-                    // success is returned only here, after an actually successful operation
-                    Ok(())
+            if !dry_run {
+                // try to send the file to garbage bin if configured to do so
+                // and if we are actually overwriting the destination file with
+                // no opposing condition (file age, contents, accessibility, etc)
+                if overwriting && trash_on_overwrite {
+                    let _ = trash::delete(&destination_path);
                 }
-                Err(res_err) => {
-                    if res_err.kind() == std::io::ErrorKind::PermissionDenied {
-                        Err(Error::new(Kind::Forbidden, FOERR_DESTINATION_IS_READONLY))
-                    } else {
-                        Err(Error::new(Kind::Unknown, ERR_CODE_GENERIC))
+
+                // actually copy the file using OS API
+                // let res = fs::copy(&source_path, &destination_path);
+                match fs::copy(&source_path, &destination_path) {
+                    Ok(_) => {
+                        // success is returned only here, after an actually successful operation
+                        Ok(())
+                    }
+                    Err(res_err) => {
+                        if res_err.kind() == std::io::ErrorKind::PermissionDenied {
+                            Err(Error::new(Kind::Forbidden, FOERR_DESTINATION_IS_READONLY))
+                        } else {
+                            Err(Error::new(Kind::Unknown, ERR_CODE_GENERIC))
+                        }
                     }
                 }
+            } else {
+                Ok(())
             }
         }
         Err(_) => Err(Error::new(Kind::Unavailable, FOERR_SOURCE_NOT_ACCESSIBLE)),
@@ -937,7 +945,12 @@ fn copy_file(
 ///     destination: the full specification of destination file
 ///     follow_symlinks: follow symbolic links
 ///     trash_on_delete: to send to garbage bin instead of deleting
-fn remove_file(destination: &Path, follow_symlinks: bool, trash_on_delete: bool) -> Result<()> {
+fn remove_file(
+    destination: &Path,
+    follow_symlinks: bool,
+    trash_on_delete: bool,
+    dry_run: bool,
+) -> Result<()> {
     // normalize paths
     let destination_path = destination.canonicalize().unwrap_or_default();
 
@@ -949,25 +962,33 @@ fn remove_file(destination: &Path, follow_symlinks: bool, trash_on_delete: bool)
             } else if d_stat.is_symlink() && !follow_symlinks {
                 Err(Error::new(Kind::Invalid, FOERR_DESTINATION_IS_SYMLINK))
             } else if trash_on_delete {
-                if trash::delete(&destination_path).is_err() {
-                    if fs::remove_file(destination_path).is_ok() {
-                        Ok(())
+                if !dry_run {
+                    if trash::delete(&destination_path).is_err() {
+                        if fs::remove_file(destination_path).is_ok() {
+                            Ok(())
+                        } else {
+                            Err(Error::new(
+                                Kind::Unavailable,
+                                FOERR_DESTINATION_NOT_ACCESSIBLE,
+                            ))
+                        }
                     } else {
-                        Err(Error::new(
-                            Kind::Unavailable,
-                            FOERR_DESTINATION_NOT_ACCESSIBLE,
-                        ))
+                        Ok(())
                     }
                 } else {
                     Ok(())
                 }
-            } else if fs::remove_file(destination_path).is_ok() {
-                Ok(())
+            } else if !dry_run {
+                if fs::remove_file(destination_path).is_ok() {
+                    Ok(())
+                } else {
+                    Err(Error::new(
+                        Kind::Unavailable,
+                        FOERR_DESTINATION_NOT_ACCESSIBLE,
+                    ))
+                }
             } else {
-                Err(Error::new(
-                    Kind::Unavailable,
-                    FOERR_DESTINATION_NOT_ACCESSIBLE,
-                ))
+                Ok(())
             }
         }
         Err(_) => Err(Error::new(
@@ -996,7 +1017,12 @@ fn remove_file(destination: &Path, follow_symlinks: bool, trash_on_delete: bool)
 ///
 /// As internal functions it also includes simple formatters for writing
 /// suitable messages when needed.
-fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> Result<()> {
+fn run_single_job(
+    job: &CopyJobConfig,
+    verbose: bool,
+    parsable_output: bool,
+    dry_run: bool,
+) -> Result<()> {
     // local helpers:
 
     // l1. format a message (both machine readable and verbose output)
@@ -1217,6 +1243,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
                         job.follow_symlinks,
                         job.create_directories,
                         job.trash_on_overwrite,
+                        dry_run,
                     ) {
                         Ok(()) => {
                             num_files_copied += 1;
@@ -1274,7 +1301,7 @@ fn run_single_job(job: &CopyJobConfig, verbose: bool, parsable_output: bool) -> 
             }
             // if not remove_other_matching the vector is empty
             for item in files_to_delete {
-                match remove_file(&item, job.follow_symlinks, job.trash_on_delete) {
+                match remove_file(&item, job.follow_symlinks, job.trash_on_delete, dry_run) {
                     Ok(()) => {
                         if verbose {
                             println!(
@@ -1384,7 +1411,12 @@ fn run_jobs(
 
     for job in job_configs {
         if global_config.active_jobs.contains(&job.job_name) {
-            match run_single_job(job, global_config.verbose, global_config.parsable_output) {
+            match run_single_job(
+                job,
+                global_config.verbose,
+                global_config.parsable_output,
+                global_config.dry_run,
+            ) {
                 Ok(()) => {
                     if global_config.verbose {
                         println!(
@@ -1432,6 +1464,10 @@ struct Args {
     /// Generate machine readable output (JSON)
     #[arg(short = 'p', long = "parsable-output")]
     parsable_output: bool,
+
+    /// Just write output without modifying the file system
+    #[arg(short = 'd', long = "dry")]
+    dry_run: bool,
 
     /// path to configuration file
     #[arg()]
@@ -1494,6 +1530,7 @@ fn main() -> std::io::Result<()> {
             .unwrap_or(PathBuf::new()),
         !args.quiet,
         args.parsable_output,
+        args.dry_run,
     );
 
     match config {
