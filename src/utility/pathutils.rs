@@ -142,9 +142,8 @@ pub fn normalize_path_slashes(path: &Path, add_trailing: bool) -> PathBuf {
     // one byte to completely avoid reallocation (see below)
     let bpath = path.as_os_str().as_encoded_bytes().as_bstr();
     let mut bres = BString::new(Vec::with_capacity(bpath.len() + 1));
-    let mut cnt: usize = 0;
 
-    for c in bpath.into_iter() {
+    for (cnt, c) in bpath.iter().enumerate() {
         // convert unix separators to win separators
         let c = if *c == UNIX_SEP { WIN_SEP } else { *c };
         let mut add = [c].as_slice().to_vec();
@@ -161,8 +160,6 @@ pub fn normalize_path_slashes(path: &Path, add_trailing: bool) -> PathBuf {
         } else {
             bres.append(&mut add);
         }
-
-        cnt += 1;
     }
 
     // this is the part where the new bstring might have needed to be extended
@@ -187,7 +184,7 @@ pub fn normalize_path_slashes(path: &Path, add_trailing: bool) -> PathBuf {
     let bpath = path.as_os_str().as_encoded_bytes().as_bstr();
     let mut bres = BString::new(Vec::with_capacity(bpath.len()));
 
-    for c in bpath.into_iter() {
+    for c in bpath.iter() {
         let mut add = [*c].as_slice().to_vec();
 
         // append the new character as long as it is possible: if it is a

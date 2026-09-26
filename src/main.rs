@@ -399,7 +399,7 @@ fn extract_config(
                         cfg_mandatory!(cfg_string_check_regex(job_map, "name", &RE_JOBNAME))?
                             .unwrap();
                     job.source_dir = normalize_path_slashes(
-                        &PathBuf::from({
+                        PathBuf::from({
                             OsString::from(
                                 &(cfg_mandatory!(cfg_string(job_map, "source"))?.unwrap()),
                             )
@@ -431,7 +431,7 @@ fn extract_config(
                         true,
                     );
                     job.destination_dir = normalize_path_slashes(
-                        &PathBuf::from({
+                        PathBuf::from({
                             OsString::from(
                                 &(cfg_mandatory!(cfg_string(job_map, "destination"))?.unwrap()),
                             )
