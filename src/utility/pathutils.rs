@@ -1,22 +1,24 @@
 //! Path management utilities
 
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::ffi::{OsStr, OsString};
 use regex::Regex;
+use std::collections::HashMap;
+use std::ffi::{OsStr, OsString};
+use std::path::{Path, PathBuf};
 
-use lazy_static::lazy_static;
 use bstr::*;
-
 
 use crate::utility::result::Result;
 
+/// Character to use in formats to avoid clashes with file names: the
+/// star (`*`) character is the best candidate as it is never legal in
+/// file names, being a wildcard
+pub const FORMAT_SAFE_CHAR: &str = "*";
 
-lazy_static! {
-    // regexs to normalize slashes
-    static ref RE_NORMALIZE_SLASHES: Regex = Regex::new(if cfg!(windows) { "\\[\\]+" } else { "/[/]+" }).unwrap();
-}
-
+// separators kept as constants, as well as the index until which double
+// backslashes are allowed on Windows
+const UNIX_SEP: u8 = b'/';
+const WIN_SEP: u8 = b'\\';
+const WIN_DSLASH_ALLOW_UPTO: usize = 2;
 
 /// This makes variables and markers replacement easier
 ///
@@ -60,7 +62,7 @@ impl ReplaceVars for String {
         //          the destination directory within job definitions
         while let Some(caps) = pattern.captures(result.as_str()) {
             let varname = caps.get(1).map_or("", |m| m.as_str());
-            let occurrence = format.replace("*", varname);
+            let occurrence = format.replace(FORMAT_SAFE_CHAR, varname);
             if let Some(replacement) = vars.get(varname) {
                 result = result.replace(&occurrence, replacement);
             } else {
@@ -116,7 +118,7 @@ impl ReplaceVars for OsString {
                 .as_str(),
         ) {
             let varname = caps.get(1).map_or("", |m| m.as_str());
-            let occurrence = format.replace("*", varname);
+            let occurrence = format.replace(FORMAT_SAFE_CHAR, varname);
             let bs = result.as_os_str().as_encoded_bytes();
             if let Some(replacement) = vars.get(&OsString::from(varname)) {
                 let bs = bs.replace(
@@ -133,19 +135,83 @@ impl ReplaceVars for OsString {
     }
 }
 
-// pub fn normalize_path_slashes(path: &Path) -> Option<PathBuf> {
-//     let s = BString::from(path.as_os_str().as_bytes());
-//     let s1 = if cfg!(windows) {
-//         s.replace("/", "\\").as_bstr()
-//     } else  {
-//         s.as_bstr()
-//     };
+#[cfg(windows)]
+/// convert slashes to backslashes and remove duplicate backslashes
+pub fn normalize_path_slashes(path: &Path, add_trailing: bool) -> PathBuf {
+    // we build a target string which is at most as big as the origin, plus
+    // one byte to completely avoid reallocation (see below)
+    let bpath = path.as_os_str().as_encoded_bytes().as_bstr();
+    let mut bres = BString::new(Vec::with_capacity(bpath.len() + 1));
+    let mut cnt: usize = 0;
 
-//     Some(PathBuf::from(
-//         RE_NORMALIZE_SLASHES.replace_all(s1, if cfg!(windows) { "\\" } else { "/" })
-//     ))
-// }
+    for c in bpath.into_iter() {
+        // convert unix separators to win separators
+        let c = if *c == UNIX_SEP { WIN_SEP } else { *c };
+        let mut add = [c].as_slice().to_vec();
 
+        // append the new character as long as it is possible: if it is a
+        // separator, we must at least have passed the second path character
+        // because double backslashes are allowed at the beginning of UNC
+        // paths, or the result must not end with a backslash; otherwise
+        // append everything
+        if c == WIN_SEP {
+            if cnt < WIN_DSLASH_ALLOW_UPTO || !bres.ends_with(&add) {
+                bres.append(&mut add);
+            }
+        } else {
+            bres.append(&mut add);
+        }
+
+        cnt += 1;
+    }
+
+    // this is the part where the new bstring might have needed to be extended
+    // if we didn't add the extra byte of capacity at the beginning
+    if add_trailing {
+        let mut add = [WIN_SEP].as_slice().to_vec();
+        if !bres.ends_with(&add) {
+            bres.append(&mut add);
+        }
+    }
+
+    // this is not unsafe because the bytes we are working on were
+    // originated just above, and no encoding mismatch can take place
+    PathBuf::from(unsafe { OsStr::from_encoded_bytes_unchecked(bres.as_slice()) })
+}
+
+#[cfg(unix)]
+/// remove duplicate backslashes
+pub fn normalize_path_slashes(path: &Path, add_trailing: bool) -> PathBuf {
+    // we build a target string which is at most as big as the origin, plus
+    // one byte to completely avoid reallocation (see below)
+    let bpath = path.as_os_str().as_encoded_bytes().as_bstr();
+    let mut bres = BString::new(Vec::with_capacity(bpath.len()));
+
+    for c in bpath.into_iter() {
+        let mut add = [*c].as_slice().to_vec();
+
+        // append the new character as long as it is possible: if it is a
+        // separator it is appended only if the result does not already end
+        // with a separator
+        if *c == UNIX_SEP && !bres.ends_with(&add) {
+            bres.append(&mut add);
+        } else {
+            bres.append(&mut add);
+        }
+    }
+
+    // this is the part where the new bstring might have needed to be extended
+    // if we didn't add the extra byte of capacity at the beginning
+    if add_trailing {
+        let mut add = [UNIX_SEP].as_slice().to_vec();
+        if !bres.ends_with(&add) {
+            bres.append(&mut add);
+        }
+    }
+
+    // this is not unsafe because the bytes we are working on were
+    // originated just above, and no encoding mismatch can take place
+    PathBuf::from(unsafe { OsStr::from_encoded_bytes_unchecked(bres.as_slice()) })
+}
 
 // end.
-

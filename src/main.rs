@@ -108,11 +108,8 @@ lazy_static! {
 
     // these must have a star corresponding to the internal group of the
     // corresponding RE_VARMENTION_* instance
-    static ref FMT_VARMENTION_LOC: String = String::from("%{*}");
-    static ref FMT_VARMENTION_ENV: String = String::from("${*}");
-
-    // regexs to normalize slashes
-    static ref RE_NORMALIZE_SLASHES: Regex = Regex::new(if cfg!(windows) { "\\[\\]+" } else { "/[/]+" }).unwrap();
+    static ref FMT_VARMENTION_LOC: String = format!("%{{{FORMAT_SAFE_CHAR}}}");
+    static ref FMT_VARMENTION_ENV: String = format!("${{{FORMAT_SAFE_CHAR}}}");
 }
 
 // helper to convert a list of regexp patterns into a single ORed regexp
@@ -227,28 +224,6 @@ fn extract_config(
         )
     }
 
-    // normalize path slashes (forward+back & multiple)
-    fn _ec_normalize_path_slashes(path: &Path) -> Option<PathBuf> {
-        let s = path.as_os_str().to_str()?;
-        let s0;
-        let s1 = if cfg!(windows) {
-            s0 = s.replace("/", "\\");
-            s0.as_str()
-        } else {
-            s
-        };
-        Some(PathBuf::from(
-            RE_NORMALIZE_SLASHES
-                .replace_all(s1, if cfg!(windows) { "\\" } else { "/" })
-                .to_string(),
-        ))
-    }
-
-    // l5. add trailing slashes
-    fn _ec_add_trailing_slashes(path: &Path) -> PathBuf {
-        path.join("")
-    }
-
     // here we also set default values
     let mut global_config = CopyJobGlobalConfig {
         active_jobs: Vec::new(),
@@ -268,12 +243,7 @@ fn extract_config(
         halt_on_errors: false,
 
         // the following parameters are defined through CLI arguments only
-        config_file: _ec_normalize_path_slashes(config_file).unwrap_or(Err(
-            _ec_error_invalid_config(&format!(
-                "FIXME: invalid config `{}`",
-                config_file.to_string_lossy(),
-            )),
-        )?),
+        config_file: normalize_path_slashes(config_file, false),
         verbose,
         parsable_output,
         dry_run,
@@ -429,8 +399,8 @@ fn extract_config(
                     job.job_name =
                         cfg_mandatory!(cfg_string_check_regex(job_map, "name", &RE_JOBNAME))?
                             .unwrap();
-                    job.source_dir = _ec_normalize_path_slashes(
-                        _ec_add_trailing_slashes(&PathBuf::from({
+                    job.source_dir = normalize_path_slashes(
+                        &PathBuf::from({
                             OsString::from(
                                 &(cfg_mandatory!(cfg_string(job_map, "source"))?.unwrap()),
                             )
@@ -457,12 +427,11 @@ fn extract_config(
                                     .map(|(k, v)| (k.clone(), v.clone()))
                                     .collect(),
                             )?
-                        }))
-                        .as_path(),
-                    )
-                    .unwrap_or(Err(_ec_error_invalid_config("source"))?);
-                    job.destination_dir = _ec_normalize_path_slashes(
-                        _ec_add_trailing_slashes(&PathBuf::from({
+                        })
+                        .as_path(), true,
+                    );
+                    job.destination_dir = normalize_path_slashes(
+                        &PathBuf::from({
                             OsString::from(
                                 &(cfg_mandatory!(cfg_string(job_map, "destination"))?.unwrap()),
                             )
@@ -489,10 +458,9 @@ fn extract_config(
                                     .map(|(k, v)| (k.clone(), v.clone()))
                                     .collect(),
                             )?
-                        }))
-                        .as_path(),
-                    )
-                    .unwrap_or(Err(_ec_error_invalid_config("destination"))?);
+                        })
+                        .as_path(), true,
+                    );
                     job.include_pattern = combine_regexp_patterns(
                         &cfg_mandatory!(cfg_vec_string(job_map, "patterns_include"))?.unwrap(),
                     );
