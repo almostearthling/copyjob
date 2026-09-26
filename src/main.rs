@@ -33,8 +33,8 @@ mod utility;
 
 use constants::*;
 use utility::cfghelp::*;
-use utility::result::*;
 use utility::pathutils::*;
+use utility::result::*;
 
 // Structures used for a copy job configuration and the global configuration:
 // values provided in CopyJobConfig default to the ones provided globally in
@@ -183,11 +183,10 @@ fn format_output_parsable(
         "message_type": mtype,
         "result": [code, mresult],
         "operation": [operation, mname],
-        "args": [marg1, marg2]
+        "args": [marg1, marg2],
     })
     .to_string()
 }
-
 
 /// Extract the configuration from a TOML file, given the file name and the
 /// pertaining arguments as resulting from the command line. A description of
@@ -212,7 +211,7 @@ fn extract_config(
     // local helpers:
 
     // create a specific error
-    fn _ec_error_invalid_config(key: &str) -> Error {
+    fn error_invalid_config(key: &str) -> Error {
         Error::new_with_message(
             Kind::Invalid,
             ERR_CODE_INVALID_CONFIG_FILE,
@@ -277,7 +276,7 @@ fn extract_config(
     // check that global keys are all known: if not report offending key
     for key in config_map.keys() {
         if !allowed_globals.contains(&key.as_str()) {
-            return Err(_ec_error_invalid_config(key));
+            return Err(error_invalid_config(key));
         }
     }
 
@@ -313,13 +312,13 @@ fn extract_config(
     let cur_key = "variables";
     let cur_item = config_map.get(cur_key);
     if !cur_item.check_that(IsMap) {
-        return Err(_ec_error_invalid_config(cur_key));
+        return Err(error_invalid_config(cur_key));
     } else {
         match cur_item {
             Some(c) => {
                 for (key, item) in c.as_map().unwrap().iter() {
                     if !item.is_str() {
-                        return Err(_ec_error_invalid_config(cur_key));
+                        return Err(error_invalid_config(cur_key));
                     }
                     global_config.variables.insert(
                         OsString::from(key.as_str()),
@@ -369,11 +368,11 @@ fn extract_config(
     match cur_item {
         Some(c) => {
             if !c.is_list() {
-                return Err(_ec_error_invalid_config(cur_key));
+                return Err(error_invalid_config(cur_key));
             }
             for job_entry in c.as_list().unwrap_or(&Vec::<CfgValue>::new()).iter() {
                 if !job_entry.is_map() {
-                    return Err(_ec_error_invalid_config(cur_key));
+                    return Err(error_invalid_config(cur_key));
                 } else {
                     let mut job = CopyJobConfig {
                         job_name: String::new(),
@@ -428,7 +427,8 @@ fn extract_config(
                                     .collect(),
                             )?
                         })
-                        .as_path(), true,
+                        .as_path(),
+                        true,
                     );
                     job.destination_dir = normalize_path_slashes(
                         &PathBuf::from({
@@ -459,7 +459,8 @@ fn extract_config(
                                     .collect(),
                             )?
                         })
-                        .as_path(), true,
+                        .as_path(),
+                        true,
                     );
                     job.include_pattern = combine_regexp_patterns(
                         &cfg_mandatory!(cfg_vec_string(job_map, "patterns_include"))?.unwrap(),
@@ -490,7 +491,7 @@ fn extract_config(
                     job.halt_on_errors = cfg_bool(job_map, "overwrite")?.unwrap_or(job.overwrite);
 
                     if job.job_name.is_empty() {
-                        return Err(_ec_error_invalid_config("job_name"));
+                        return Err(error_invalid_config("job_name"));
                     }
                     global_config.job_list.push(String::from(&job.job_name));
                     job_configs.push(job);
@@ -504,7 +505,7 @@ fn extract_config(
     let cur_key = "active_jobs";
     for item in global_config.active_jobs.clone() {
         if !global_config.job_list.contains(&item) {
-            return Err(_ec_error_invalid_config(cur_key));
+            return Err(error_invalid_config(cur_key));
         }
     }
 
