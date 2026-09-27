@@ -242,6 +242,11 @@ The way I use **copyjob** is, for some of the subdirectories in a certain tree, 
 You might want to redirect *stdout* and *stderr* to a log file, especially if these actions are automated.
 
 
+## My stance on LLMs and AI
+
+I am using this little project to experiment cooperation with an LLM: at the moment the cooperation consists in code review, bug hunting, and requests of suggestions on how to refactor the code itself and how to fix possible bugs. This kind of "coworking" significantly changed the codebase in a way that I am appreciating, while the code is still edited, amended, checked and understood by humans (me, in fact). I am investigating a constructive way to use LLMs, and this seems to hit the spot at least for now: although skeptical on many points, I still think that generative AI can help in development, even though I still think that, as advertised in most AI chat applications, all output produced by such tools deserves, when it does not just *need*, a thorough review.
+
+
 ## License
 
 This utility is released under the GNU LGPL v3. It is free to use and to modify for everyone, as long as the modified source is made available under the same license terms.
