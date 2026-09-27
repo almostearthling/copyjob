@@ -18,14 +18,17 @@ For a description of TOML as a configuration file language, see the language [sp
 **copyjob** can be invoked from the command line. By typing `copyjob --help` at the prompt, the utility will display a brief usage message:
 
 ```text
+Perform complex and selective copy operations according to criteria provided in a TOML file
+
 Usage: copyjob [OPTIONS] <CONFIG>
 
 Arguments:
   <CONFIG>  path to configuration file
 
 Options:
-  -q, --quiet            Suppress all output
-  -p, --parsable-output  Generate machine readable output (JSON)
+  -q, --quiet            suppress all output
+  -p, --parsable-output  generate machine readable output (JSON)
+  -D, --dry-run          just write output without modifying the file system
   -h, --help             Print help
   -V, --version          Print version
 ```
