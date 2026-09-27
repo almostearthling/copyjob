@@ -2,7 +2,6 @@
 //! An utility to perform complex copy operations based on TOML files
 //! (c) 2023-2026, Francesco Garosi
 
-use std::ffi::OsString;
 use std::fs;
 use std::fs::File;
 use std::fs::create_dir_all;
@@ -15,7 +14,7 @@ use std::io::Read;
 use lazy_static::lazy_static;
 
 use std::collections::HashMap;
-// use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
 use regex::{Regex, RegexBuilder};
@@ -117,7 +116,7 @@ fn combine_regexp_patterns(res: &[String]) -> String {
     format!("({})", res.join("|"))
 }
 
-// Helper to calculate hash for a single file
+// helper to calculate hash for a single file
 // see https://stackoverflow.com/a/71606608/5138770
 fn sha256_digest(path: &Path) -> std::io::Result<String> {
     let input = File::open(path)?;
@@ -189,19 +188,7 @@ fn format_output_parsable(
 }
 
 /// Extract the configuration from a TOML file, given the file name and the
-/// pertaining arguments as resulting from the command line. A description of
-/// the arguments follows:
-///
-///     config_file: the path to the configuration file (CLI argument)
-///     verbose: turn verbosity on (goes into config), negation of CLI argument 'quiet'
-///     parsable_output: produce machine readable output, CLI argument 'parsable-output'
-///
-/// Returns a tuple consisting in a global configuration and a list of job
-/// configurations if successful, otherwise an error containing a string that
-/// briefly describes the error and possibly where it occurred.
-///
-/// As internal functions it also includes utilities for string replacement
-/// in the handled paths.
+/// pertaining arguments as resulting from the command line.
 fn extract_config(
     config_file: &PathBuf,
     verbose: bool,
@@ -515,18 +502,6 @@ fn extract_config(
 
 /// Build a list of files in a directory matching/unmatching a pattern by
 /// either listing the files in that directory or traversing it recursively.
-/// A description of the accepted parameters follows:
-///
-///     search_dir: the full specification of search directory
-///     include_pattern: file/dir names to be processed (regular expression)
-///     exclude_pattern: file/dir names to be excluded (regular expression)
-///     recursive: recursively traverse the directory structure
-///     follow_symlinks: follow symbolic links
-///     case_sensitive: consider provided patterns as case sensitive
-///
-/// this utility can be used both for determining which files to copy from
-/// the source directory and what files to delete in the destination folder
-/// if requested
 ///
 /// NOTE: skip errors code, see: https://github.com/BurntSushi/walkdir/blob/master/README.md
 fn list_files_matching(
@@ -773,7 +748,6 @@ fn copy_file(
                 }
 
                 // actually copy the file using OS API
-                // let res = fs::copy(&source_path, &destination_path);
                 match fs::copy(&source_path, &destination_path) {
                     Ok(_) => {
                         // success is returned only here, after an actually successful operation
@@ -795,12 +769,7 @@ fn copy_file(
     }
 }
 
-/// Attempt to remove a specified file if it exists and if allowed to. A
-/// full description of the required parameters follows:
-///
-///     destination: the full specification of destination file
-///     follow_symlinks: follow symbolic links
-///     trash_on_delete: to send to garbage bin instead of deleting
+/// Attempt to remove a specified file if it exists and if allowed to.
 fn remove_file(
     destination: &Path,
     follow_symlinks: bool,
@@ -855,34 +824,15 @@ fn remove_file(
 }
 
 /// Perform a single copy job, by building a list of files to copy and by
-/// copying them if possible using `copyfile` seen above. To be noticed that:
-///
-///     1) the job name has to be provided for reporting/logging purposes
-///     2) source_dir and destination_dir need to be passed to this function
-///        *after* replacing shortcuts and variables with their values, as no
-///        substitution is performed here
-///
-/// A description of the parameters follows:
-///
-///     job: &CopyJobConfig, containing all the job parameters
-///     verbose: bool, provide output while running the job
-///     parsable_output: bool, provide machine readable output if verbose
-///
-/// NOTE: writes to stdout/stderr
-/// NOTE: machine readable prefix of this section is JOB
-///
-/// As internal functions it also includes simple formatters for writing
-/// suitable messages when needed.
+/// copying them if possible using `copyfile` seen above.
 fn run_single_job(
     job: &CopyJobConfig,
     verbose: bool,
     parsable_output: bool,
     dry_run: bool,
 ) -> Result<()> {
-    // local helpers:
-
-    // l1. format a message (both machine readable and verbose output)
-    fn _format_message(
+    // format a message (both machine readable and verbose output)
+    fn format_message(
         parsable_output: bool,
         job: &str,
         operation: &str,
@@ -935,8 +885,8 @@ fn run_single_job(
         }
     }
 
-    // l2. format job information (both machine readable and verbose output)
-    fn _format_jobinfo(
+    // format job information (both machine readable and verbose output)
+    fn format_jobinfo(
         parsable_output: bool,
         job: &str,
         operation: &str,
@@ -985,12 +935,12 @@ fn run_single_job(
     }
 
     // source and destination must exist and be canonicalizeable
-    let source_directory = PathBuf::from(&job.source_dir.canonicalize().unwrap_or_default());
+    let source_directory = PathBuf::from(&job.source_dir.canonicalize()?);
     if !source_directory.exists() {
         if verbose {
             eprintln!(
                 "{}",
-                _format_jobinfo(
+                format_jobinfo(
                     parsable_output,
                     &job.job_name,
                     OPERATION_JOB_BEGIN,
@@ -1006,7 +956,7 @@ fn run_single_job(
         if verbose {
             eprintln!(
                 "{}",
-                _format_jobinfo(
+                format_jobinfo(
                     parsable_output,
                     &job.job_name,
                     OPERATION_JOB_BEGIN,
@@ -1052,7 +1002,7 @@ fn run_single_job(
             if verbose {
                 println!(
                     "{}",
-                    _format_jobinfo(
+                    format_jobinfo(
                         parsable_output,
                         &job.job_name,
                         OPERATION_JOB_BEGIN,
@@ -1063,7 +1013,10 @@ fn run_single_job(
                 );
             }
             for item in files_to_copy {
-                // here we also copy the file
+                // here we also copy the file: if there is any error while
+                // determining the destination file name, the copy operation
+                // is aborted; this is however unlikely, since source file
+                // names are actually retrieved from the OS
                 let destination = PathBuf::from(&job.destination_dir);
                 let destfile_relative: PathBuf = if job.keep_structure {
                     PathBuf::from(&item)
@@ -1071,8 +1024,7 @@ fn run_single_job(
                         .unwrap_or(&PathBuf::from(""))
                         .to_path_buf()
                 } else {
-                    PathBuf::from(&item.file_name().unwrap_or(std::ffi::OsStr::new("")))
-                        .to_path_buf()
+                    PathBuf::from(&item.file_name().unwrap_or(OsStr::new(""))).to_path_buf()
                 };
                 if !destfile_relative.as_os_str().is_empty() {
                     let destfile_absolute = destination.join(destfile_relative);
@@ -1106,7 +1058,7 @@ fn run_single_job(
                             if verbose {
                                 println!(
                                     "{}",
-                                    _format_message(
+                                    format_message(
                                         parsable_output,
                                         &job.job_name,
                                         OPERATION_JOB_COPY,
@@ -1121,7 +1073,7 @@ fn run_single_job(
                             if verbose {
                                 eprintln!(
                                     "{}",
-                                    _format_message(
+                                    format_message(
                                         parsable_output,
                                         &job.job_name,
                                         OPERATION_JOB_COPY,
@@ -1140,7 +1092,7 @@ fn run_single_job(
                     if verbose {
                         eprintln!(
                             "{}",
-                            _format_message(
+                            format_message(
                                 parsable_output,
                                 &job.job_name,
                                 OPERATION_JOB_COPY,
@@ -1162,7 +1114,7 @@ fn run_single_job(
                         if verbose {
                             println!(
                                 "{}",
-                                _format_message(
+                                format_message(
                                     parsable_output,
                                     &job.job_name,
                                     OPERATION_JOB_DEL,
@@ -1178,7 +1130,7 @@ fn run_single_job(
                         if verbose {
                             eprintln!(
                                 "{}",
-                                _format_message(
+                                format_message(
                                     parsable_output,
                                     &job.job_name,
                                     OPERATION_JOB_DEL,
@@ -1197,7 +1149,7 @@ fn run_single_job(
             if verbose {
                 println!(
                     "{}",
-                    _format_jobinfo(
+                    format_jobinfo(
                         parsable_output,
                         &job.job_name,
                         OPERATION_JOB_END,
@@ -1212,7 +1164,7 @@ fn run_single_job(
             if verbose {
                 eprintln!(
                     "{}",
-                    _format_jobinfo(
+                    format_jobinfo(
                         parsable_output,
                         &job.job_name,
                         OPERATION_JOB_END,
@@ -1231,28 +1183,15 @@ fn run_single_job(
 
 /// Perform all jobs, according to the passed global config object and list
 /// of job configuration objects, that is the result of extract_config as
-/// defined above. A brief description of the arguments follows:
-///
-///     global_config: &CopyJobGlobalConfig, global configuration
-///     job_configs: &Vec<CopyJobConfig>, full list of job configurations
-///
-/// This function selects the jobs to actually perform according to the
-/// list of names provided in global_config.active_jobs, so the full list
-/// of jobs found in the configuration file can be provided.
-///
-/// NOTE: writes to stdout/stderr
-/// NOTE: machine readable prefix of this section is TASK
-///
-/// As internal functions it also includes simple formatters for writing
-/// suitable messages when needed.
+/// defined above.
 fn run_jobs(
     global_config: &CopyJobGlobalConfig,
     job_configs: &Vec<CopyJobConfig>,
 ) -> std::io::Result<()> {
     // local helpers:
 
-    // l1. format a message (both machine readable and verbose output)
-    fn _format_message(parsable_output: bool, job: &str, code: i64) -> String {
+    // format a message (both machine readable and verbose output)
+    fn format_message(parsable_output: bool, job: &str, code: i64) -> String {
         if parsable_output {
             format_output_parsable(CONTEXT_TASK, job, code, OPERATION_JOB_END, "", "")
         } else if code == 0 {
@@ -1277,7 +1216,7 @@ fn run_jobs(
                     if global_config.verbose {
                         println!(
                             "{}",
-                            _format_message(global_config.parsable_output, &job.job_name, 0)
+                            format_message(global_config.parsable_output, &job.job_name, 0)
                         );
                     }
                 }
@@ -1285,7 +1224,7 @@ fn run_jobs(
                     if global_config.verbose {
                         println!(
                             "{}",
-                            _format_message(
+                            format_message(
                                 global_config.parsable_output,
                                 &job.job_name,
                                 err.code()
@@ -1333,7 +1272,7 @@ struct Args {
 // entry point: mandatory arguments are handled by the parser
 fn main() -> std::io::Result<()> {
     // formatter to write a message (here for coherence with other functions)
-    fn _format_message(
+    fn format_message(
         parsable_output: bool,
         operation: &str,
         name: &str,
@@ -1383,7 +1322,7 @@ fn main() -> std::io::Result<()> {
     let config = extract_config(
         &PathBuf::from(args.config)
             .canonicalize()
-            .unwrap_or(PathBuf::new()),
+            .unwrap_or_default(), // will result in a config error anyway
         !args.quiet,
         args.parsable_output,
         args.dry_run,
@@ -1394,15 +1333,15 @@ fn main() -> std::io::Result<()> {
             if !args.quiet {
                 println!(
                     "{}",
-                    _format_message(
+                    format_message(
                         args.parsable_output,
                         OPERATION_CONFIG,
-                        global.config_file.as_os_str().to_str().unwrap_or(""),
+                        &global.config_file.as_os_str().to_string_lossy(),
                         None,
                         "",
                         &format!(
-                            "using configuration file {}",
-                            global.config_file.as_os_str().to_str().unwrap_or(""),
+                            "using configuration file `{}`",
+                            global.config_file.as_os_str().to_string_lossy(),
                         ),
                     )
                 );
@@ -1413,7 +1352,7 @@ fn main() -> std::io::Result<()> {
                     if !args.quiet {
                         println!(
                             "{}",
-                            _format_message(
+                            format_message(
                                 args.parsable_output,
                                 OPERATION_MAIN_END,
                                 "",
@@ -1429,7 +1368,7 @@ fn main() -> std::io::Result<()> {
                     if !args.quiet {
                         eprintln!(
                             "{}",
-                            _format_message(
+                            format_message(
                                 args.parsable_output,
                                 OPERATION_MAIN_END,
                                 "",
@@ -1447,7 +1386,7 @@ fn main() -> std::io::Result<()> {
             if !args.quiet {
                 eprintln!(
                     "{}",
-                    _format_message(
+                    format_message(
                         args.parsable_output,
                         OPERATION_MAIN_END,
                         "",
