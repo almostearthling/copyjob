@@ -98,17 +98,6 @@ lazy_static! {
     static ref RE_VARNAME: Regex = Regex::new(r"^[a-zA-Z_][a-zA-Z0-9_]*$").unwrap();
     static ref RE_JOBNAME: Regex = Regex::new(r"^[a-zA-Z_][a-zA-Z0-9_]*$").unwrap();
     static ref RE_MATCH_NO_FILE: Regex = Regex::new(&STR_MATCH_NO_FILE).unwrap();
-
-    // variable mention expressions: *_LOC is the mention of a variable
-    // defined in the configuration file, *_ENV is the mention of a variable
-    // defined in the system environment
-    static ref RE_VARMENTION_LOC: Regex = Regex::new(r"[%]\{([a-zA-Z_][a-zA-Z0-9_]*)\}").unwrap();
-    static ref RE_VARMENTION_ENV: Regex = Regex::new(r"[\$]\{([a-zA-Z_][a-zA-Z0-9_]*)\}").unwrap();
-
-    // these must have a star corresponding to the internal group of the
-    // corresponding RE_VARMENTION_* instance
-    static ref FMT_VARMENTION_LOC: String = format!("%{{{FORMAT_SAFE_CHAR}}}");
-    static ref FMT_VARMENTION_ENV: String = format!("${{{FORMAT_SAFE_CHAR}}}");
 }
 
 // helper to convert a list of regexp patterns into a single ORed regexp
@@ -146,30 +135,10 @@ fn format_output_parsable(
     arg1: &str,
     arg2: &str,
 ) -> String {
-    let mresult = code_to_str_parsable(code).to_string();
-    let mtype = if code == 0 {
-        String::from("INFO")
-    } else {
-        String::from("ERROR")
-    };
-
-    let mname = if name.is_empty() {
-        String::from("<N/A>")
-    } else {
-        String::from(name)
-    };
-
-    let marg1 = if arg1.is_empty() {
-        String::from("<N/A>")
-    } else {
-        String::from(arg1)
-    };
-
-    let marg2 = if arg2.is_empty() {
-        String::from("<N/A>")
-    } else {
-        String::from(arg2)
-    };
+    // shortcut to write N/A instead of the empty string, thanks Claude
+    fn or_na(s: &str) -> &str {
+        if s.is_empty() { "<N/A>" } else { s }
+    }
 
     // construct a JSON message that reports the context, the type of message,
     // the result both as an integer (see the *ERR_* constants above) and as a
@@ -179,10 +148,10 @@ fn format_output_parsable(
     // the current operation; then return it as a String
     json!({
         "context": context,
-        "message_type": mtype,
-        "result": [code, mresult],
-        "operation": [operation, mname],
-        "args": [marg1, marg2],
+        "message_type": if code == 0 { "INFO" } else { "ERROR" },
+        "result": [code, code_to_str_parsable(code)],
+        "operation": [operation, or_na(name)],
+        "args": [or_na(arg1), or_na(arg2)],
     })
     .to_string()
 }
@@ -340,7 +309,7 @@ fn extract_config(
     global_config.trash_on_delete =
         cfg_bool(&config_map, "trash_on_delete")?.unwrap_or(global_config.trash_on_delete);
     global_config.trash_on_overwrite =
-        cfg_bool(&config_map, "trash_on_overwrite")?.unwrap_or(global_config.trash_on_delete);
+        cfg_bool(&config_map, "trash_on_overwrite")?.unwrap_or(global_config.trash_on_overwrite);
     global_config.halt_on_errors =
         cfg_bool(&config_map, "halt_on_errors")?.unwrap_or(global_config.halt_on_errors);
 
@@ -386,66 +355,22 @@ fn extract_config(
                         cfg_mandatory!(cfg_string_check_regex(job_map, "name", &RE_JOBNAME))?
                             .unwrap();
                     job.source_dir = normalize_path_slashes(
-                        PathBuf::from({
-                            OsString::from(
-                                &(cfg_mandatory!(cfg_string(job_map, "source"))?.unwrap()),
-                            )
-                            .replace_start(
-                                &markers
-                                    .iter()
-                                    .map(|(k, v)| (OsString::from(*k), v.as_os_str().to_owned()))
-                                    .collect(),
-                            )?
-                            .replace_vars(
-                                &RE_VARMENTION_LOC,
-                                &FMT_VARMENTION_LOC,
-                                &global_config
-                                    .variables
-                                    .iter()
-                                    .map(|(k, v)| (k.clone(), v.clone()))
-                                    .collect(),
-                            )?
-                            .replace_vars(
-                                &RE_VARMENTION_ENV,
-                                &FMT_VARMENTION_ENV,
-                                &sys_variables
-                                    .iter()
-                                    .map(|(k, v)| (k.clone(), v.clone()))
-                                    .collect(),
-                            )?
-                        })
+                        interpolate_dir(
+                            &(cfg_mandatory!(cfg_string(job_map, "source"))?.unwrap()),
+                            &markers,
+                            &global_config.variables,
+                            &sys_variables,
+                        )?
                         .as_path(),
                         true,
                     );
                     job.destination_dir = normalize_path_slashes(
-                        PathBuf::from({
-                            OsString::from(
-                                &(cfg_mandatory!(cfg_string(job_map, "destination"))?.unwrap()),
-                            )
-                            .replace_start(
-                                &markers
-                                    .iter()
-                                    .map(|(k, v)| (OsString::from(*k), v.as_os_str().to_owned()))
-                                    .collect(),
-                            )?
-                            .replace_vars(
-                                &RE_VARMENTION_LOC,
-                                &FMT_VARMENTION_LOC,
-                                &global_config
-                                    .variables
-                                    .iter()
-                                    .map(|(k, v)| (k.clone(), v.clone()))
-                                    .collect(),
-                            )?
-                            .replace_vars(
-                                &RE_VARMENTION_ENV,
-                                &FMT_VARMENTION_ENV,
-                                &sys_variables
-                                    .iter()
-                                    .map(|(k, v)| (k.clone(), v.clone()))
-                                    .collect(),
-                            )?
-                        })
+                        interpolate_dir(
+                            &(cfg_mandatory!(cfg_string(job_map, "destination"))?.unwrap()),
+                            &markers,
+                            &global_config.variables,
+                            &sys_variables,
+                        )?
                         .as_path(),
                         true,
                     );
@@ -476,7 +401,7 @@ fn extract_config(
                     job.trash_on_overwrite =
                         cfg_bool(job_map, "trash_on_overwrite")?.unwrap_or(job.trash_on_overwrite);
                     job.halt_on_errors =
-                        cfg_bool(job_map, "overwrite")?.unwrap_or(job.halt_on_errors);
+                        cfg_bool(job_map, "halt_on_errors")?.unwrap_or(job.halt_on_errors);
 
                     if job.job_name.is_empty() {
                         return Err(error_invalid_config("job_name"));
@@ -513,7 +438,7 @@ fn list_files_matching(
     recursive: bool,
     follow_symlinks: bool,
     case_sensitive: bool,
-) -> Option<Vec<PathBuf>> {
+) -> Vec<PathBuf> {
     // FIXME: for now erratic patterns only cause a no-match (acceptable?)
     //        in the release version they should actually return None
     let include_match = RegexBuilder::new(format!("^{include_pattern}$").as_str())
@@ -538,7 +463,6 @@ fn list_files_matching(
 
     let depth: usize = if recursive { usize::MAX } else { 1 };
     let mut result: Vec<PathBuf> = Vec::new();
-    let search_dir_strlen = search_dir.to_str().unwrap_or("").len() - 1;
 
     for entry in WalkDir::new(search_dir)
         .max_depth(depth)
@@ -548,28 +472,17 @@ fn list_files_matching(
     {
         // skip errors
         if !(entry.file_type().is_dir() || (follow_symlinks && entry.file_type().is_symlink())) {
-            let mut dir_pathbuf = PathBuf::from(entry.path());
-            let subdir_name = if dir_pathbuf.pop() {
-                let mut res = String::new();
-                for (idx, c) in dir_pathbuf
-                    .to_str()
-                    .unwrap_or("")
-                    .to_string()
-                    .chars()
-                    .enumerate()
-                {
-                    if idx >= search_dir_strlen {
-                        res.push(c);
-                    }
-                }
-                res.push_str(ps);
-                res
+            let mut entry_dir = PathBuf::from(entry.path());
+            let subdir_name = if entry_dir.pop() {
+                entry_dir
+                    .strip_prefix(&search_dir)
+                    .map_or(None, |x| Some(x))
             } else {
-                // a value of '*' as directory reports an error ('reserved' on both Unix&Win)
-                String::from("*")
+                None
             };
-            if subdir_name != "*"
-                && !excludedir_match.is_match(&subdir_name)
+
+            if let Some(subdir_name) = subdir_name
+                && !excludedir_match.is_match(&subdir_name.to_str().unwrap_or(""))
                 && let Some(file_name) = entry.path().file_name()
                 && include_match.is_match(file_name.to_str().unwrap_or(""))
                 && !exclude_match.is_match(file_name.to_str().unwrap_or(""))
@@ -578,7 +491,7 @@ fn list_files_matching(
             }
         }
     }
-    Some(result)
+    result
 }
 
 /// Attempt to copy a single file to a destination (provided as a path):
@@ -610,11 +523,10 @@ fn copy_file(
     dry_run: bool,
 ) -> Result<()> {
     // normalize paths
-    let source_path = PathBuf::from(&source.canonicalize().unwrap_or_default());
-    let destination_path = PathBuf::from(
-        &destination
+    let source_path = &source.canonicalize().unwrap_or_default();
+    let destination_path = &destination
             .canonicalize()
-            .unwrap_or(PathBuf::from(&destination)),
+            .unwrap_or(PathBuf::from(&destination),
     );
     // NOTE: https://doc.rust-lang.org/nightly/std/fs/fn.canonicalize.html#errors
     //       `canonicalize` returns an error if the target does not exist, thus
@@ -649,60 +561,17 @@ fn copy_file(
                     } else if d_stat.is_symlink() && !follow_symlinks {
                         return Err(Error::new(Kind::Forbidden, FOERR_DESTINATION_IS_SYMLINK));
                     }
-                    if skip_newer {
-                        match s_stat.modified() {
-                            Ok(s_mtime) => match d_stat.modified() {
-                                Ok(d_mtime) => {
-                                    if s_mtime <= d_mtime {
-                                        return Err(Error::new(
-                                            Kind::Invalid,
-                                            FOERR_DESTINATION_IS_NEWER,
-                                        ));
-                                    }
-                                }
-                                Err(_) => {
-                                    return Err(Error::new(
-                                        Kind::Unavailable,
-                                        FOERR_DESTINATION_NOT_ACCESSIBLE,
-                                    ));
-                                }
-                            },
-                            // should never be reached
-                            Err(_) => {
-                                return Err(Error::new(
-                                    Kind::Unavailable,
-                                    FOERR_SOURCE_NOT_ACCESSIBLE,
-                                ));
-                            }
-                        }
+
+                    if skip_newer && s_stat.modified()? <= d_stat.modified()? {
+                        return Err(Error::new(Kind::Invalid, FOERR_DESTINATION_IS_NEWER));
                     }
+
                     // only when asked perform content checking via SHA256
                     // and skip copy if the contents are the same
-                    if check_content {
-                        match sha256_digest(&source_path) {
-                            Ok(source_hash) => match sha256_digest(&destination_path) {
-                                Ok(destination_hash) => {
-                                    if destination_hash == source_hash {
-                                        return Err(Error::new(
-                                            Kind::Invalid,
-                                            FOERR_DESTINATION_IS_IDENTICAL,
-                                        ));
-                                    }
-                                }
-                                Err(_) => {
-                                    return Err(Error::new(
-                                        Kind::Unavailable,
-                                        FOERR_DESTINATION_NOT_ACCESSIBLE,
-                                    ));
-                                }
-                            },
-                            Err(_) => {
-                                return Err(Error::new(
-                                    Kind::Unavailable,
-                                    FOERR_SOURCE_NOT_ACCESSIBLE,
-                                ));
-                            }
-                        }
+                    if check_content
+                        && sha256_digest(&source_path)? == sha256_digest(&destination_path)?
+                    {
+                        return Err(Error::new(Kind::Invalid, FOERR_DESTINATION_IS_IDENTICAL));
                     }
 
                     // if this point is reached we are actually overwriting
@@ -749,19 +618,15 @@ fn copy_file(
                 }
 
                 // actually copy the file using OS API
-                match fs::copy(&source_path, &destination_path) {
-                    Ok(_) => {
-                        // success is returned only here, after an actually successful operation
-                        Ok(())
-                    }
-                    Err(res_err) => {
-                        if res_err.kind() == std::io::ErrorKind::PermissionDenied {
-                            Err(Error::new(Kind::Forbidden, FOERR_DESTINATION_IS_READONLY))
+                fs::copy(&source_path, &destination_path)
+                    .map(|_| ())
+                    .map_err(|e| {
+                        if e.kind() == std::io::ErrorKind::PermissionDenied {
+                            Error::new(Kind::Forbidden, FOERR_DESTINATION_IS_READONLY)
                         } else {
-                            Err(Error::new(Kind::Unknown, ERR_CODE_GENERIC))
+                            Error::new(Kind::Unknown, ERR_CODE_GENERIC)
                         }
-                    }
-                }
+                    })
             } else {
                 Ok(())
             }
@@ -789,30 +654,17 @@ fn remove_file(
                 Err(Error::new(Kind::Invalid, FOERR_DESTINATION_IS_SYMLINK))
             } else if trash_on_delete {
                 if !dry_run {
-                    if trash::delete(&destination_path).is_err() {
-                        if fs::remove_file(destination_path).is_ok() {
-                            Ok(())
-                        } else {
-                            Err(Error::new(
-                                Kind::Unavailable,
-                                FOERR_DESTINATION_NOT_ACCESSIBLE,
-                            ))
-                        }
-                    } else {
-                        Ok(())
-                    }
+                    trash::delete(&destination_path)
+                        .or_else(|_| fs::remove_file(destination_path))
+                        .map_err(|_| {
+                            Error::new(Kind::Unavailable, FOERR_DESTINATION_NOT_ACCESSIBLE)
+                        })
                 } else {
                     Ok(())
                 }
             } else if !dry_run {
-                if fs::remove_file(destination_path).is_ok() {
-                    Ok(())
-                } else {
-                    Err(Error::new(
-                        Kind::Unavailable,
-                        FOERR_DESTINATION_NOT_ACCESSIBLE,
-                    ))
-                }
+                fs::remove_file(destination_path)
+                    .map_err(|_| Error::new(Kind::Unavailable, FOERR_DESTINATION_NOT_ACCESSIBLE))
             } else {
                 Ok(())
             }
@@ -936,7 +788,7 @@ fn run_single_job(
     }
 
     // source and destination must exist and be canonicalizeable
-    let source_directory = PathBuf::from(&job.source_dir.canonicalize()?);
+    let source_directory = &job.source_dir.canonicalize()?;
     if !source_directory.exists() {
         if verbose {
             eprintln!(
@@ -974,7 +826,7 @@ fn run_single_job(
     }
 
     // build the list of files to be copied
-    match list_files_matching(
+    let files_to_copy = list_files_matching(
         &job.source_dir,
         &job.include_pattern,
         &job.exclude_pattern,
@@ -982,134 +834,133 @@ fn run_single_job(
         job.recursive,
         job.follow_symlinks,
         job.case_sensitive,
-    ) {
-        Some(files_to_copy) => {
-            let mut num_files_copied: usize = 0;
-            let mut num_files_deleted: usize = 0;
-            let mut files_to_delete = if job.remove_others_matching {
-                list_files_matching(
-                    &job.destination_dir,
-                    &job.include_pattern,
-                    &job.exclude_pattern,
-                    &job.excludedir_pattern,
-                    job.recursive,
-                    job.follow_symlinks,
-                    job.case_sensitive,
+    );
+    if !files_to_copy.is_empty() {
+        let mut num_files_copied: usize = 0;
+        let mut num_files_deleted: usize = 0;
+        let mut files_to_delete = if job.remove_others_matching {
+            list_files_matching(
+                &job.destination_dir,
+                &job.include_pattern,
+                &job.exclude_pattern,
+                &job.excludedir_pattern,
+                job.recursive,
+                job.follow_symlinks,
+                job.case_sensitive,
+            )
+        } else {
+            // an empty vector will delete no files
+            Vec::new()
+        };
+        if verbose {
+            println!(
+                "{}",
+                format_jobinfo(
+                    parsable_output,
+                    &job.job_name,
+                    OPERATION_JOB_BEGIN,
+                    ERR_CODE_OK,
+                    files_to_copy.len(),
+                    files_to_delete.len(),
                 )
-                .unwrap_or_default()
+            );
+        }
+        for item in &files_to_copy {
+            // here we also copy the file: if there is any error while
+            // determining the destination file name, the copy operation
+            // is aborted; this is however unlikely, since source file
+            // names are actually retrieved from the OS
+            let destination = PathBuf::from(&job.destination_dir);
+            let destfile_relative: PathBuf = if job.keep_structure {
+                PathBuf::from(&item)
+                    .strip_prefix(&job.source_dir)
+                    .unwrap_or(&PathBuf::from(""))
+                    .to_path_buf()
             } else {
-                Vec::new()
+                PathBuf::from(&item.file_name().unwrap_or(OsStr::new(""))).to_path_buf()
             };
-            if verbose {
-                println!(
-                    "{}",
-                    format_jobinfo(
-                        parsable_output,
-                        &job.job_name,
-                        OPERATION_JOB_BEGIN,
-                        ERR_CODE_OK,
-                        files_to_copy.len(),
-                        files_to_delete.len(),
-                    )
-                );
-            }
-            for item in files_to_copy {
-                // here we also copy the file: if there is any error while
-                // determining the destination file name, the copy operation
-                // is aborted; this is however unlikely, since source file
-                // names are actually retrieved from the OS
-                let destination = PathBuf::from(&job.destination_dir);
-                let destfile_relative: PathBuf = if job.keep_structure {
-                    PathBuf::from(&item)
-                        .strip_prefix(&job.source_dir)
-                        .unwrap_or(&PathBuf::from(""))
-                        .to_path_buf()
-                } else {
-                    PathBuf::from(&item.file_name().unwrap_or(OsStr::new(""))).to_path_buf()
+            if !destfile_relative.as_os_str().is_empty() {
+                let destfile_absolute = destination.join(destfile_relative);
+                // now that the destination path is known, check
+                // whether the list of matching files to delete
+                // contains it and remove it from the list: in
+                // this way the deletion process is selective and
+                // only deletes unwanted files in the target
+                // directory
+                if files_to_delete.contains(&destfile_absolute) {
+                    files_to_delete.remove(
+                        files_to_delete
+                            .iter()
+                            .position(|x| x.as_path() == destfile_absolute.as_path())
+                            .unwrap(),
+                    ); // cannot panic here
+                }
+                match copy_file(
+                    &item,
+                    &destfile_absolute,
+                    job.overwrite,
+                    job.skip_newer,
+                    job.check_content,
+                    job.follow_symlinks,
+                    job.create_directories,
+                    job.trash_on_overwrite,
+                    dry_run,
+                ) {
+                    Ok(()) => {
+                        num_files_copied += 1;
+                        if verbose {
+                            println!(
+                                "{}",
+                                format_message(
+                                    parsable_output,
+                                    &job.job_name,
+                                    OPERATION_JOB_COPY,
+                                    ERR_CODE_OK,
+                                    &item,
+                                    &destfile_absolute,
+                                )
+                            );
+                        }
+                    }
+                    Err(err) => {
+                        if verbose {
+                            eprintln!(
+                                "{}",
+                                format_message(
+                                    parsable_output,
+                                    &job.job_name,
+                                    OPERATION_JOB_COPY,
+                                    err.code(),
+                                    &item,
+                                    &destfile_absolute,
+                                )
+                            );
+                        }
+                        if job.halt_on_errors {
+                            return Err(Error::new(Kind::Failed, CJERR_HALT_ON_COPY_ERROR));
+                        };
+                    }
                 };
-                if !destfile_relative.as_os_str().is_empty() {
-                    let destfile_absolute = destination.join(destfile_relative);
-                    // now that the destination path is known, check
-                    // whether the list of matching files to delete
-                    // contains it and remove it from the list: in
-                    // this way the deletion process is selective and
-                    // only deletes unwanted files in the target
-                    // directory
-                    if files_to_delete.contains(&destfile_absolute) {
-                        files_to_delete.remove(
-                            files_to_delete
-                                .iter()
-                                .position(|x| x.as_path() == destfile_absolute.as_path())
-                                .unwrap(),
-                        ); // cannot panic here
-                    }
-                    match copy_file(
-                        &item,
-                        &destfile_absolute,
-                        job.overwrite,
-                        job.skip_newer,
-                        job.check_content,
-                        job.follow_symlinks,
-                        job.create_directories,
-                        job.trash_on_overwrite,
-                        dry_run,
-                    ) {
-                        Ok(()) => {
-                            num_files_copied += 1;
-                            if verbose {
-                                println!(
-                                    "{}",
-                                    format_message(
-                                        parsable_output,
-                                        &job.job_name,
-                                        OPERATION_JOB_COPY,
-                                        ERR_CODE_OK,
-                                        &item,
-                                        &destfile_absolute,
-                                    )
-                                );
-                            }
-                        }
-                        Err(err) => {
-                            if verbose {
-                                eprintln!(
-                                    "{}",
-                                    format_message(
-                                        parsable_output,
-                                        &job.job_name,
-                                        OPERATION_JOB_COPY,
-                                        err.code(),
-                                        &item,
-                                        &destfile_absolute,
-                                    )
-                                );
-                            }
-                            if job.halt_on_errors {
-                                return Err(Error::new(Kind::Failed, CJERR_HALT_ON_COPY_ERROR));
-                            };
-                        }
-                    };
-                } else {
-                    if verbose {
-                        eprintln!(
-                            "{}",
-                            format_message(
-                                parsable_output,
-                                &job.job_name,
-                                OPERATION_JOB_COPY,
-                                CJERR_CANNOT_DETERMINE_DESTFILE,
-                                &item,
-                                &destination,
-                            )
-                        );
-                    }
-                    if job.halt_on_errors {
-                        return Err(Error::new(Kind::Failed, CJERR_HALT_ON_COPY_ERROR));
-                    }
+            } else {
+                if verbose {
+                    eprintln!(
+                        "{}",
+                        format_message(
+                            parsable_output,
+                            &job.job_name,
+                            OPERATION_JOB_COPY,
+                            CJERR_CANNOT_DETERMINE_DESTFILE,
+                            &item,
+                            &destination,
+                        )
+                    );
+                }
+                if job.halt_on_errors {
+                    return Err(Error::new(Kind::Failed, CJERR_HALT_ON_COPY_ERROR));
                 }
             }
             // if not remove_other_matching the vector is empty
-            for item in files_to_delete {
+            for item in &files_to_delete {
                 match remove_file(&item, job.follow_symlinks, job.trash_on_delete, dry_run) {
                     Ok(()) => {
                         if verbose {
@@ -1161,22 +1012,8 @@ fn run_single_job(
                 );
             }
         }
-        None => {
-            if verbose {
-                eprintln!(
-                    "{}",
-                    format_jobinfo(
-                        parsable_output,
-                        &job.job_name,
-                        OPERATION_JOB_END,
-                        CJERR_NO_SOURCE_FILES,
-                        0,
-                        0,
-                    )
-                );
-            }
-            return Err(Error::new(Kind::Unavailable, CJERR_NO_SOURCE_FILES));
-        }
+    } else {
+        return Err(Error::new(Kind::Unavailable, CJERR_NO_SOURCE_FILES));
     }
 
     Ok(())

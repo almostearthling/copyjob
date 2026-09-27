@@ -5,7 +5,7 @@
 ///
 /// module providing shortcut functions/macros to help configuration of items
 /// by providing a CfgMap instance and the key to be retrieved
-use cfgmap::CfgMap;
+use cfgmap::{CfgMap, CfgValue};
 use regex::Regex;
 
 use crate::constants::*;
@@ -63,7 +63,7 @@ pub fn cfg_err_invalid_config(key: &str, value: &str, message: &str) -> Error {
 }
 
 /// check that a configuration map only contains keys among the specified ones
-pub fn cfg_check_keys(cfgmap: &CfgMap, check: &Vec<&str>) -> Result<()> {
+pub fn cfg_check_keys(cfgmap: &CfgMap, check: &[&str]) -> Result<()> {
     for key in cfgmap.keys() {
         if !check.contains(&key.as_str()) {
             return Err(cfg_err_invalid_config(
@@ -76,36 +76,29 @@ pub fn cfg_check_keys(cfgmap: &CfgMap, check: &Vec<&str>) -> Result<()> {
     Ok(())
 }
 
+// TODO: this and the corresponding specializations must be ported to whenever
+/// get a value of type T
+fn cfg_value<T>(
+    cfgmap: &CfgMap,
+    key: &str,
+    as_variant: impl Fn(&CfgValue) -> Option<T>,
+) -> Result<Option<T>> {
+    cfgmap.get(key).map_or(Ok(None), |item| {
+        as_variant(item)
+            .map(Some)
+            .ok_or_else(|| cfg_err_invalid_config(key, STR_INVALID_TYPE, ERR_INVALID_PARAMETER))
+    })
+}
+
+
 /// get a boolean
 pub fn cfg_bool(cfgmap: &CfgMap, key: &str) -> Result<Option<bool>> {
-    if let Some(item) = cfgmap.get(key) {
-        if !item.is_bool() {
-            return Err(cfg_err_invalid_config(
-                key,
-                STR_INVALID_TYPE,
-                ERR_INVALID_PARAMETER,
-            ));
-        }
-        Ok(Some(*item.as_bool().unwrap()))
-    } else {
-        Ok(None)
-    }
+    cfg_value(cfgmap, key, |v| v.as_bool().copied())
 }
 
 /// get an integer without checks
 pub fn cfg_int(cfgmap: &CfgMap, key: &str) -> Result<Option<i64>> {
-    if let Some(item) = cfgmap.get(key) {
-        if !item.is_int() {
-            return Err(cfg_err_invalid_config(
-                key,
-                STR_INVALID_TYPE,
-                ERR_INVALID_PARAMETER,
-            ));
-        }
-        Ok(Some(item.as_int().unwrap().to_owned()))
-    } else {
-        Ok(None)
-    }
+    cfg_value(cfgmap, key, |v| v.as_int().copied())
 }
 
 /// get an integer checking it with provided closure
@@ -151,18 +144,7 @@ pub fn cfg_int_check_eq(cfgmap: &CfgMap, key: &str, a: i64) -> Result<Option<i64
 
 /// get a float without checks
 pub fn cfg_float(cfgmap: &CfgMap, key: &str) -> Result<Option<f64>> {
-    if let Some(item) = cfgmap.get(key) {
-        if !item.is_float() {
-            return Err(cfg_err_invalid_config(
-                key,
-                STR_INVALID_TYPE,
-                ERR_INVALID_PARAMETER,
-            ));
-        }
-        Ok(Some(item.as_float().unwrap().to_owned()))
-    } else {
-        Ok(None)
-    }
+    cfg_value(cfgmap, key, |v| v.as_float().copied())
 }
 
 /// get a float checking it with provided closure
@@ -208,18 +190,8 @@ pub fn cfg_float_check_eq(cfgmap: &CfgMap, key: &str, a: f64) -> Result<Option<f
 
 /// get a string without checks
 pub fn cfg_string(cfgmap: &CfgMap, key: &str) -> Result<Option<String>> {
-    if let Some(item) = cfgmap.get(key) {
-        if !item.is_str() {
-            return Err(cfg_err_invalid_config(
-                key,
-                STR_INVALID_TYPE,
-                ERR_INVALID_PARAMETER,
-            ));
-        }
-        Ok(Some(item.as_str().unwrap().to_owned()))
-    } else {
-        Ok(None)
-    }
+    // this one is different because String is not Copy
+    cfg_value(cfgmap, key, |v| v.as_str().map(|s| s.to_owned()))
 }
 
 /// get a string checking it with provided closure
@@ -261,7 +233,7 @@ pub fn cfg_string_check_exact_nocase(
 pub fn cfg_string_check_within(
     cfgmap: &CfgMap,
     key: &str,
-    check: &Vec<&str>,
+    check: &[&str],
 ) -> Result<Option<String>> {
     cfg_string_check(cfgmap, key, |x| check.contains(&x))
 }
@@ -270,7 +242,7 @@ pub fn cfg_string_check_within(
 pub fn cfg_string_check_within_nocase(
     cfgmap: &CfgMap,
     key: &str,
-    check: &Vec<&str>,
+    check: &[&str],
 ) -> Result<Option<String>> {
     cfg_string_check(cfgmap, key, |x| {
         check.iter().any(|y| y.to_uppercase() == x.to_uppercase())
@@ -540,7 +512,7 @@ pub fn cfg_vec_string_check_exact_nocase(
 pub fn cfg_vec_string_check_within(
     cfgmap: &CfgMap,
     key: &str,
-    check: &Vec<&str>,
+    check: &[&str],
 ) -> Result<Option<Vec<String>>> {
     cfg_vec_string_check(cfgmap, key, |x| check.contains(&x))
 }
@@ -549,7 +521,7 @@ pub fn cfg_vec_string_check_within(
 pub fn cfg_vec_string_check_within_nocase(
     cfgmap: &CfgMap,
     key: &str,
-    check: &Vec<&str>,
+    check: &[&str],
 ) -> Result<Option<Vec<String>>> {
     cfg_vec_string_check(cfgmap, key, |x| {
         check.iter().any(|y| y.to_uppercase() == x.to_uppercase())
