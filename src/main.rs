@@ -475,7 +475,8 @@ fn extract_config(
                         cfg_bool(job_map, "trash_on_delete")?.unwrap_or(job.trash_on_delete);
                     job.trash_on_overwrite =
                         cfg_bool(job_map, "trash_on_overwrite")?.unwrap_or(job.trash_on_overwrite);
-                    job.halt_on_errors = cfg_bool(job_map, "overwrite")?.unwrap_or(job.overwrite);
+                    job.halt_on_errors =
+                        cfg_bool(job_map, "overwrite")?.unwrap_or(job.halt_on_errors);
 
                     if job.job_name.is_empty() {
                         return Err(error_invalid_config("job_name"));
@@ -1248,20 +1249,21 @@ fn run_jobs(
 // argument parsing and command execution: doc comments are used by clap
 use clap::Parser;
 
-/// Perform complex copy jobs according to criteria provided in a TOML file
+/// Perform complex and selective copy operations according to criteria
+/// provided in a TOML file
 #[derive(Parser)]
 #[command(name = "copyjob", version, about)]
 struct Args {
-    /// Suppress all output
+    /// suppress all output
     #[arg(short, long)]
     quiet: bool,
 
-    /// Generate machine readable output (JSON)
+    /// generate machine readable output (JSON)
     #[arg(short = 'p', long = "parsable-output")]
     parsable_output: bool,
 
-    /// Just write output without modifying the file system
-    #[arg(short = 'd', long = "dry")]
+    /// just write output without modifying the file system
+    #[arg(short = 'D', long = "dry-run")]
     dry_run: bool,
 
     /// path to configuration file
