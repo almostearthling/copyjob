@@ -91,9 +91,10 @@ impl ReplaceVars for OsString {
                 s = OsString::from(
                     s.as_os_str()
                         .as_encoded_bytes()
-                        .replace(
+                        .replacen(
                             k.as_encoded_bytes(),
                             v.as_os_str().as_encoded_bytes().as_bstr(),
+                            1,
                         )
                         .as_bstr()
                         .to_path()?,

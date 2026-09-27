@@ -230,11 +230,7 @@ fn extract_config(
     };
 
     // check that global keys are all known: if not report offending key
-    for key in config_map.keys() {
-        if !allowed_globals.contains(&key.as_str()) {
-            return Err(error_invalid_config(key));
-        }
-    }
+    cfg_check_keys(&config_map, &allowed_globals)?;
 
     // strings that will be used to build actal paths
     let var_user_home = home_dir().unwrap();
@@ -523,11 +519,10 @@ fn copy_file(
     dry_run: bool,
 ) -> Result<()> {
     // normalize paths
-    let source_path = &source.canonicalize().unwrap_or_default();
-    let destination_path = &destination
-            .canonicalize()
-            .unwrap_or(PathBuf::from(&destination),
-    );
+    let source_path = source.canonicalize().unwrap_or_default();
+    let destination_path = destination
+        .canonicalize()
+        .unwrap_or(PathBuf::from(&destination));
     // NOTE: https://doc.rust-lang.org/nightly/std/fs/fn.canonicalize.html#errors
     //       `canonicalize` returns an error if the target does not exist, thus
     //       we either get the canonicalized path or the original path.
@@ -959,58 +954,58 @@ fn run_single_job(
                     return Err(Error::new(Kind::Failed, CJERR_HALT_ON_COPY_ERROR));
                 }
             }
-            // if not remove_other_matching the vector is empty
-            for item in &files_to_delete {
-                match remove_file(&item, job.follow_symlinks, job.trash_on_delete, dry_run) {
-                    Ok(()) => {
-                        if verbose {
-                            println!(
-                                "{}",
-                                format_message(
-                                    parsable_output,
-                                    &job.job_name,
-                                    OPERATION_JOB_DEL,
-                                    ERR_CODE_OK,
-                                    &PathBuf::new(),
-                                    &item,
-                                )
-                            );
-                        }
-                        num_files_deleted += 1;
+        }
+        // if not remove_other_matching the vector is empty
+        for item in &files_to_delete {
+            match remove_file(&item, job.follow_symlinks, job.trash_on_delete, dry_run) {
+                Ok(()) => {
+                    if verbose {
+                        println!(
+                            "{}",
+                            format_message(
+                                parsable_output,
+                                &job.job_name,
+                                OPERATION_JOB_DEL,
+                                ERR_CODE_OK,
+                                &PathBuf::new(),
+                                &item,
+                            )
+                        );
                     }
-                    Err(err) => {
-                        if verbose {
-                            eprintln!(
-                                "{}",
-                                format_message(
-                                    parsable_output,
-                                    &job.job_name,
-                                    OPERATION_JOB_DEL,
-                                    err.code(),
-                                    &PathBuf::new(),
-                                    &item,
-                                )
-                            );
-                        }
-                        if job.halt_on_errors {
-                            return Err(Error::new(Kind::Failed, CJERR_HALT_ON_COPY_ERROR));
-                        };
+                    num_files_deleted += 1;
+                }
+                Err(err) => {
+                    if verbose {
+                        eprintln!(
+                            "{}",
+                            format_message(
+                                parsable_output,
+                                &job.job_name,
+                                OPERATION_JOB_DEL,
+                                err.code(),
+                                &PathBuf::new(),
+                                &item,
+                            )
+                        );
                     }
+                    if job.halt_on_errors {
+                        return Err(Error::new(Kind::Failed, CJERR_HALT_ON_COPY_ERROR));
+                    };
                 }
             }
-            if verbose {
-                println!(
-                    "{}",
-                    format_jobinfo(
-                        parsable_output,
-                        &job.job_name,
-                        OPERATION_JOB_END,
-                        ERR_CODE_OK,
-                        num_files_copied,
-                        num_files_deleted,
-                    )
-                );
-            }
+        }
+        if verbose {
+            println!(
+                "{}",
+                format_jobinfo(
+                    parsable_output,
+                    &job.job_name,
+                    OPERATION_JOB_END,
+                    ERR_CODE_OK,
+                    num_files_copied,
+                    num_files_deleted,
+                )
+            );
         }
     } else {
         return Err(Error::new(Kind::Unavailable, CJERR_NO_SOURCE_FILES));
@@ -1024,7 +1019,7 @@ fn run_single_job(
 /// defined above.
 fn run_jobs(
     global_config: &CopyJobGlobalConfig,
-    job_configs: &Vec<CopyJobConfig>,
+    job_configs: &[CopyJobConfig],
 ) -> std::io::Result<()> {
     // local helpers:
 
