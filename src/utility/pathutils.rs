@@ -18,7 +18,10 @@ pub const FORMAT_SAFE_CHAR: &str = "*";
 // separators kept as constants, as well as the index until which double
 // backslashes are allowed on Windows
 const UNIX_SEP: u8 = b'/';
+
+#[cfg(windows)]
 const WIN_SEP: u8 = b'\\';
+#[cfg(windows)]
 const WIN_DSLASH_ALLOW_UPTO: usize = 2;
 
 lazy_static! {
@@ -183,7 +186,7 @@ pub fn normalize_path_slashes(path: &Path, add_trailing: bool) -> PathBuf {
 }
 
 #[cfg(unix)]
-/// remove duplicate backslashes
+/// remove duplicate slashes
 pub fn normalize_path_slashes(path: &Path, add_trailing: bool) -> PathBuf {
     // we build a target string which is at most as big as the origin, plus
     // one byte to completely avoid reallocation (see below)
