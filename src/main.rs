@@ -452,8 +452,10 @@ fn list_files_matching(
     // of the excluded directory (this solution is working for now); since the
     // startup directory is already canonicalized we can use specific REs for
     // path separators on Windows and UNIX
-    let ps = if cfg!(windows) { WIN_SEP } else { UNIX_SEP };
-    let psre = format!("\\{ps}");
+    #[cfg(windows)]
+    let psre = format!("\\{WIN_SEP}");
+    #[cfg(unix)]
+    let psre = format!("\\{UNIX_SEP}");
     let excludedir_match = RegexBuilder::new(format!("{psre}{excludedir_pattern}{psre}").as_str())
         .case_insensitive(!case_sensitive)
         .build()
