@@ -236,6 +236,8 @@ fn extract_config(
     let var_user_home = home_dir().unwrap();
     let var_config_file_dir = PathBuf::from(config_file.clone().parent().unwrap());
 
+    // here I should use WIN_SEP and UNIX_SEP, but I really don't
+    // want to allocate even more and use an owned String
     let mut markers: HashMap<&str, PathBuf> = HashMap::new();
     markers.insert("~/", var_user_home.clone());
     markers.insert("@/", var_config_file_dir.clone());
@@ -450,7 +452,7 @@ fn list_files_matching(
     // of the excluded directory (this solution is working for now); since the
     // startup directory is already canonicalized we can use specific REs for
     // path separators on Windows and UNIX
-    let ps = if cfg!(windows) { "\\" } else { "/" };
+    let ps = if cfg!(windows) { WIN_SEP } else { UNIX_SEP };
     let psre = format!("\\{ps}");
     let excludedir_match = RegexBuilder::new(format!("{psre}{excludedir_pattern}{psre}").as_str())
         .case_insensitive(!case_sensitive)

@@ -17,10 +17,10 @@ pub const FORMAT_SAFE_CHAR: &str = "*";
 
 // separators kept as constants, as well as the index until which double
 // backslashes are allowed on Windows
-const UNIX_SEP: u8 = b'/';
+pub const UNIX_SEP: u8 = b'/';
 
 #[cfg(windows)]
-const WIN_SEP: u8 = b'\\';
+pub const WIN_SEP: u8 = b'\\';
 #[cfg(windows)]
 const WIN_DSLASH_ALLOW_UPTO: usize = 2;
 
