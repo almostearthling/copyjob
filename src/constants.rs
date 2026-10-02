@@ -1,5 +1,18 @@
 // generic constants
+#![allow(dead_code)]
 
+// The application name
+pub const APP_NAME: &str = env!("CARGO_PKG_NAME");
+pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+pub const ERR_INVALID_VALUE_FOR_ENTRY: &str = "invalid value for entry";
+pub const ERR_INVALID_VALUE_FOR_LIST_ENTRY: &str = "invalid value for list entry";
+
+pub const STR_UNKNOWN_VALUE: &str = "<unknown>";
+pub const STR_INVALID_TYPE: &str = "<invalid_type>";
+pub const STR_INVALID_VALUE: &str = "<invalid_value>";
+
+// errors
 pub const ERR_FAILED: &str = "failed";
 
 pub const ERR_INVALID_CONFIG: &str = "invalid configuration";
@@ -9,17 +22,7 @@ pub const ERR_MISSING_PARAMETER: &str = "missing parameter";
 pub const ERR_INVALID_PARAMETER: &str = "invalid parameter";
 pub const ERR_INVALID_PARAMETER_LIST: &str = "invalid list or list element";
 
-// pub const ERR_INVALID_VALUE_FOR: &str = "invalid value for";
-pub const ERR_INVALID_VALUE_FOR_ENTRY: &str = "invalid value for entry";
-pub const ERR_INVALID_VALUE_FOR_LIST_ENTRY: &str = "invalid value for list entry";
-
-pub const STR_UNKNOWN_VALUE: &str = "<unknown>";
-pub const STR_INVALID_TYPE: &str = "<invalid_type>";
-pub const STR_INVALID_VALUE: &str = "<invalid_value>";
-
-// specific constants
-
-// Values for Outcome::Error (copy_file, remove_file)
+// values for Outcome::Error (copy_file, remove_file)
 pub const FOERR_GENERIC_FAILURE: i64 = 1001;
 pub const FOERR_DESTINATION_IS_ITSELF: i64 = 1011;
 pub const FOERR_DESTINATION_IS_DIR: i64 = 1012;
