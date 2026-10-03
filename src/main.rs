@@ -21,10 +21,10 @@ use regex::{Regex, RegexBuilder};
 
 use dirs::home_dir;
 use walkdir::WalkDir;
+use soft_canonicalize::soft_canonicalize;
 
 use cfgmap::{CfgMap, CfgValue, Checkable, Condition::*};
 use data_encoding::HEXLOWER;
-use serde_json::json;
 use sha2::{Digest, Sha256};
 
 mod constants;
@@ -32,6 +32,7 @@ mod utility;
 
 use constants::*;
 use utility::cfghelp::*;
+use utility::logging::{LogType, init as log_init, log as log_base};
 use utility::pathutils::*;
 use utility::result::*;
 
@@ -79,10 +80,7 @@ struct CopyJobGlobalConfig {
     halt_on_errors: bool,     // exit job if an error occurs
 
     // the following parameters are defined through CLI arguments only
-    config_file: PathBuf,  // configuration file path
-    verbose: bool,         // provide output while running
-    parsable_output: bool, // provide machine-readable output
-    dry_run: bool,         // just write messages, don't actually perform jobs
+    dry_run: bool, // just write messages, don't actually perform jobs
 }
 
 // Some constants used within the code
@@ -126,42 +124,10 @@ fn sha256_digest(path: &Path) -> std::io::Result<String> {
     Ok(HEXLOWER.encode(digest.as_ref()))
 }
 
-// helper to format a parsable output line consistently
-fn format_output_parsable(
-    context: &'static str,
-    name: &str,
-    code: i64,
-    operation: &str,
-    arg1: &str,
-    arg2: &str,
-) -> String {
-    // shortcut to write N/A instead of the empty string, thanks Claude
-    fn or_na(s: &str) -> &str {
-        if s.is_empty() { "<N/A>" } else { s }
-    }
-
-    // construct a JSON message that reports the context, the type of message,
-    // the result both as an integer (see the *ERR_* constants above) and as a
-    // short string, the operation (point in the context) being performed when
-    // the message is issued, and two (optional) arguments that may or may not
-    // contain a value, and whose value depends on the current context and/or
-    // the current operation; then return it as a String
-    json!({
-        "context": context,
-        "message_type": if code == 0 { "INFO" } else { "ERROR" },
-        "result": [code, code_to_str_parsable(code)],
-        "operation": [operation, or_na(name)],
-        "args": [or_na(arg1), or_na(arg2)],
-    })
-    .to_string()
-}
-
 /// Extract the configuration from a TOML file, given the file name and the
 /// pertaining arguments as resulting from the command line.
 fn extract_config(
     config_file: &PathBuf,
-    verbose: bool,
-    parsable_output: bool,
     dry_run: bool,
 ) -> Result<(CopyJobGlobalConfig, Vec<CopyJobConfig>)> {
     // local helpers:
@@ -198,9 +164,6 @@ fn extract_config(
         halt_on_errors: false,
 
         // the following parameters are defined through CLI arguments only
-        config_file: normalize_path_slashes(config_file, false),
-        verbose,
-        parsable_output,
         dry_run,
     };
     let mut job_configs: Vec<CopyJobConfig> = Vec::new();
@@ -677,147 +640,48 @@ fn remove_file(
 
 /// Perform a single copy job, by building a list of files to copy and by
 /// copying them if possible using `copyfile` seen above.
-fn run_single_job(
-    job: &CopyJobConfig,
-    verbose: bool,
-    parsable_output: bool,
-    dry_run: bool,
-) -> Result<()> {
-    // format a message (both machine readable and verbose output)
-    fn format_message(
-        parsable_output: bool,
-        job: &str,
-        operation: &str,
-        code: i64,
-        source: &Path,
-        destination: &Path,
-    ) -> String {
-        if parsable_output {
-            format_output_parsable(
-                CONTEXT_JOB,
-                job,
-                code,
-                operation,
-                source.to_str().unwrap_or("<unknown>"),
-                destination.to_str().unwrap_or("<unknown>"),
-            )
-        } else {
-            match operation {
-                OPERATION_JOB_COPY => {
-                    if code == 0 {
-                        format!(
-                            "copied in job {job}: {} => {}",
-                            source.display(),
-                            destination.display(),
-                        )
-                    } else {
-                        format!(
-                            "error in job {job}: '{}' while copying {} => {}",
-                            code_to_str_readable(code),
-                            source.display(),
-                            destination.display(),
-                        )
-                    }
-                }
-                OPERATION_JOB_DEL => {
-                    if code == 0 {
-                        format!("removed in job {job}: {}", destination.display(),)
-                    } else {
-                        format!(
-                            "error in job {job}: '{}' while removing {}",
-                            code_to_str_readable(code),
-                            destination.display(),
-                        )
-                    }
-                }
-                op => {
-                    format!("unexpected operation: {op}")
-                }
-            }
-        }
-    }
-
-    // format job information (both machine readable and verbose output)
-    fn format_jobinfo(
-        parsable_output: bool,
-        job: &str,
-        operation: &str,
-        code: i64,
-        num_copy: usize,
-        num_delete: usize,
-    ) -> String {
-        if parsable_output {
-            format_output_parsable(
-                CONTEXT_JOB,
-                job,
-                code,
-                operation,
-                &format!("{num_copy}"),
-                &format!("{num_delete}"),
-            )
-        } else {
-            match operation {
-                OPERATION_JOB_BEGIN => {
-                    if code == 0 {
-                        format!(
-                            "\
-                            operations in job {job}: {num_copy} file(s) to copy, \
-                            {num_delete} to possibly remove on destination"
-                        )
-                    } else {
-                        format!("error before job {job}: '{}'", code_to_str_readable(code))
-                    }
-                }
-                OPERATION_JOB_END => {
-                    if code == 0 {
-                        format!(
-                            "\
-                            results for job {job}: {num_copy} file(s) copied, \
-                            {num_delete} removed on destination"
-                        )
-                    } else {
-                        format!("error in job {job}: '{}'", code_to_str_readable(code))
-                    }
-                }
-                op => {
-                    format!("unexpected operation: {op}")
-                }
-            }
-        }
-    }
+fn run_single_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
+    let log = |severity, action, source, destination, when, status, message_code, message_extra| {
+        log_base(
+            severity,
+            LOG_EMITTER_JOB,
+            Some(job.job_name.clone()),
+            action,
+            source,
+            destination,
+            when,
+            status,
+            message_code,
+            message_extra,
+        );
+    };
 
     // source and destination must exist and be canonicalizeable
     let source_directory = &job.source_dir.canonicalize()?;
     if !source_directory.exists() {
-        if verbose {
-            eprintln!(
-                "{}",
-                format_jobinfo(
-                    parsable_output,
-                    &job.job_name,
-                    OPERATION_JOB_BEGIN,
-                    CJERR_SOURCE_DIR_NOT_EXISTS,
-                    0,
-                    0,
-                )
-            );
-        }
+        log(
+            LogType::Error,
+            LOG_ACTION_JOB,
+            Some(job.source_dir.clone()),
+            None,
+            LOG_WHEN_START,
+            LOG_STATUS_ERR,
+            CJERR_SOURCE_DIR_NOT_EXISTS,
+            None,
+        );
         return Err(Error::new(Kind::Unavailable, CJERR_SOURCE_DIR_NOT_EXISTS));
     }
     if !job.destination_dir.exists() && !job.create_directories {
-        if verbose {
-            eprintln!(
-                "{}",
-                format_jobinfo(
-                    parsable_output,
-                    &job.job_name,
-                    OPERATION_JOB_BEGIN,
-                    CJERR_DESTINATION_DIR_NOT_EXISTS,
-                    0,
-                    0,
-                )
-            );
-        }
+        log(
+            LogType::Error,
+            LOG_ACTION_JOB,
+            None,
+            Some(job.destination_dir.clone()),
+            LOG_WHEN_START,
+            LOG_STATUS_ERR,
+            CJERR_DESTINATION_DIR_NOT_EXISTS,
+            None,
+        );
         return Err(Error::new(
             Kind::Unavailable,
             CJERR_DESTINATION_DIR_NOT_EXISTS,
@@ -851,35 +715,37 @@ fn run_single_job(
             // an empty vector will delete no files
             Vec::new()
         };
-        if verbose {
-            println!(
-                "{}",
-                format_jobinfo(
-                    parsable_output,
-                    &job.job_name,
-                    OPERATION_JOB_BEGIN,
-                    ERR_CODE_OK,
-                    files_to_copy.len(),
-                    files_to_delete.len(),
-                )
-            );
-        }
+        log(
+            LogType::Info,
+            LOG_ACTION_JOB,
+            Some(job.source_dir.clone()),
+            Some(job.destination_dir.clone()),
+            LOG_WHEN_START,
+            LOG_STATUS_MSG,
+            ERR_CODE_NONE,
+            Some(format!(
+                "copying {} files, deleting {} files",
+                files_to_copy.len(),
+                files_to_delete.len(),
+            )),
+        );
         for item in &files_to_copy {
             // here we also copy the file: if there is any error while
             // determining the destination file name, the copy operation
             // is aborted; this is however unlikely, since source file
             // names are actually retrieved from the OS
             let destination = PathBuf::from(&job.destination_dir);
-            let destfile_relative: PathBuf = if job.keep_structure {
-                PathBuf::from(&item)
-                    .strip_prefix(&job.source_dir)
-                    .unwrap_or(&PathBuf::from(""))
-                    .to_path_buf()
+            let srcfile_relative = PathBuf::from(&item)
+                .strip_prefix(&job.source_dir)
+                .expect("error stripping file prefix") // impossible: parent directory determines the file
+                .to_path_buf();
+            let destfile_relative = if job.keep_structure {
+                srcfile_relative.clone()
             } else {
                 PathBuf::from(&item.file_name().unwrap_or(OsStr::new(""))).to_path_buf()
             };
             if !destfile_relative.as_os_str().is_empty() {
-                let destfile_absolute = destination.join(destfile_relative);
+                let destfile_absolute = destination.join(&destfile_relative);
                 // now that the destination path is known, check
                 // whether the list of matching files to delete
                 // contains it and remove it from the list: in
@@ -907,53 +773,60 @@ fn run_single_job(
                 ) {
                     Ok(()) => {
                         num_files_copied += 1;
-                        if verbose {
-                            println!(
-                                "{}",
-                                format_message(
-                                    parsable_output,
-                                    &job.job_name,
-                                    OPERATION_JOB_COPY,
-                                    ERR_CODE_OK,
-                                    &item,
-                                    &destfile_absolute,
-                                )
-                            );
-                        }
+                        log(
+                            LogType::Info,
+                            LOG_ACTION_COPY,
+                            Some(srcfile_relative.clone()),
+                            Some(destfile_relative.clone()),
+                            LOG_WHEN_PROC,
+                            LOG_STATUS_MSG,
+                            ERR_CODE_OK,
+                            None,
+                        );
                     }
                     Err(err) => {
-                        if verbose {
-                            eprintln!(
-                                "{}",
-                                format_message(
-                                    parsable_output,
-                                    &job.job_name,
-                                    OPERATION_JOB_COPY,
-                                    err.code(),
-                                    &item,
-                                    &destfile_absolute,
-                                )
-                            );
-                        }
+                        log(
+                            if job.halt_on_errors {
+                                LogType::Error
+                            } else {
+                                LogType::Warn
+                            },
+                            LOG_ACTION_COPY,
+                            Some(srcfile_relative.clone()),
+                            Some(destfile_relative.clone()),
+                            if job.halt_on_errors {
+                                LOG_WHEN_END
+                            } else {
+                                LOG_WHEN_PROC
+                            },
+                            LOG_STATUS_ERR,
+                            err.code(),
+                            Some(format!("{ERR_FAILED} ({err})")),
+                        );
                         if job.halt_on_errors {
                             return Err(Error::new(Kind::Failed, CJERR_HALT_ON_COPY_ERROR));
                         };
                     }
                 };
             } else {
-                if verbose {
-                    eprintln!(
-                        "{}",
-                        format_message(
-                            parsable_output,
-                            &job.job_name,
-                            OPERATION_JOB_COPY,
-                            CJERR_CANNOT_DETERMINE_DESTFILE,
-                            &item,
-                            &destination,
-                        )
-                    );
-                }
+                log(
+                    if job.halt_on_errors {
+                        LogType::Error
+                    } else {
+                        LogType::Warn
+                    },
+                    LOG_ACTION_COPY,
+                    Some(srcfile_relative.clone()),
+                    None,
+                    if job.halt_on_errors {
+                        LOG_WHEN_END
+                    } else {
+                        LOG_WHEN_PROC
+                    },
+                    LOG_STATUS_ERR,
+                    CJERR_CANNOT_DETERMINE_DESTFILE,
+                    None,
+                );
                 if job.halt_on_errors {
                     return Err(Error::new(Kind::Failed, CJERR_HALT_ON_COPY_ERROR));
                 }
@@ -963,54 +836,56 @@ fn run_single_job(
         for item in &files_to_delete {
             match remove_file(&item, job.follow_symlinks, job.trash_on_delete, dry_run) {
                 Ok(()) => {
-                    if verbose {
-                        println!(
-                            "{}",
-                            format_message(
-                                parsable_output,
-                                &job.job_name,
-                                OPERATION_JOB_DEL,
-                                ERR_CODE_OK,
-                                &PathBuf::new(),
-                                &item,
-                            )
-                        );
-                    }
                     num_files_deleted += 1;
+                    log(
+                        LogType::Info,
+                        LOG_ACTION_DEL,
+                        None,
+                        Some(item.clone()),
+                        LOG_WHEN_PROC,
+                        LOG_STATUS_OK,
+                        ERR_CODE_OK,
+                        None,
+                    );
                 }
                 Err(err) => {
-                    if verbose {
-                        eprintln!(
-                            "{}",
-                            format_message(
-                                parsable_output,
-                                &job.job_name,
-                                OPERATION_JOB_DEL,
-                                err.code(),
-                                &PathBuf::new(),
-                                &item,
-                            )
-                        );
-                    }
+                    log(
+                        if job.halt_on_errors {
+                            LogType::Error
+                        } else {
+                            LogType::Warn
+                        },
+                        LOG_ACTION_DEL,
+                        None,
+                        Some(item.clone()),
+                        if job.halt_on_errors {
+                            LOG_WHEN_END
+                        } else {
+                            LOG_WHEN_PROC
+                        },
+                        LOG_STATUS_ERR,
+                        err.code(),
+                        Some(format!("{ERR_FAILED} ({err})")),
+                    );
                     if job.halt_on_errors {
                         return Err(Error::new(Kind::Failed, CJERR_HALT_ON_COPY_ERROR));
                     };
                 }
             }
         }
-        if verbose {
-            println!(
-                "{}",
-                format_jobinfo(
-                    parsable_output,
-                    &job.job_name,
-                    OPERATION_JOB_END,
-                    ERR_CODE_OK,
-                    num_files_copied,
-                    num_files_deleted,
-                )
-            );
-        }
+        log(
+            LogType::Info,
+            LOG_ACTION_OTHER,
+            Some(job.source_dir.clone()),
+            Some(job.destination_dir.clone()),
+            LOG_WHEN_END,
+            LOG_STATUS_OK,
+            ERR_CODE_OK,
+            Some(format!(
+                "copied {} files, deleted {} files",
+                num_files_copied, num_files_deleted,
+            )),
+        );
     } else {
         return Err(Error::new(Kind::Unavailable, CJERR_NO_SOURCE_FILES));
     }
@@ -1026,48 +901,45 @@ fn run_jobs(
     job_configs: &[CopyJobConfig],
 ) -> std::io::Result<()> {
     // local helpers:
-
-    // format a message (both machine readable and verbose output)
-    fn format_message(parsable_output: bool, job: &str, code: i64) -> String {
-        if parsable_output {
-            format_output_parsable(CONTEXT_TASK, job, code, OPERATION_JOB_END, "", "")
-        } else if code == 0 {
-            format!("job {job} completed successfully")
-        } else {
-            format!(
-                "job {job} failed with error '{}'",
-                code_to_str_readable(code)
-            )
-        }
+    fn log(severity: LogType, when: &str, status: &str, message_code: i64, extra: Option<String>) {
+        log_base(
+            severity,
+            LOG_EMITTER_GLOBAL,
+            None,
+            LOG_ACTION_OTHER,
+            None,
+            None,
+            when,
+            status,
+            message_code,
+            extra,
+        );
     }
 
     for job in job_configs {
         if global_config.active_jobs.contains(&job.job_name) {
-            match run_single_job(
-                job,
-                global_config.verbose,
-                global_config.parsable_output,
-                global_config.dry_run,
-            ) {
+            match run_single_job(job, global_config.dry_run) {
                 Ok(()) => {
-                    if global_config.verbose {
-                        println!(
-                            "{}",
-                            format_message(global_config.parsable_output, &job.job_name, 0)
-                        );
-                    }
+                    log(
+                        LogType::Debug,
+                        LOG_WHEN_END,
+                        LOG_STATUS_OK,
+                        ERR_CODE_OK,
+                        None,
+                    );
                 }
                 Err(err) => {
-                    if global_config.verbose {
-                        println!(
-                            "{}",
-                            format_message(
-                                global_config.parsable_output,
-                                &job.job_name,
-                                err.code()
-                            )
-                        );
-                    }
+                    log(
+                        if global_config.halt_on_errors {
+                            LogType::Error
+                        } else {
+                            LogType::Warn
+                        },
+                        LOG_WHEN_END,
+                        LOG_STATUS_ERR,
+                        err.code(),
+                        Some(format!("{err}")),
+                    );
                     if global_config.halt_on_errors {
                         return Err(std::io::Error::new(
                             std::io::ErrorKind::Interrupted,
@@ -1082,6 +954,25 @@ fn run_jobs(
     Ok(())
 }
 
+// this is similar to my usual exiterror
+macro_rules! exit_if_fails {
+    ( $quiet:expr, $might_fail:expr ) => {
+        match $might_fail {
+            Err(e) => {
+                if !$quiet {
+                    if cfg!(debug_assertions) {
+                        eprintln!("{APP_NAME} error: {:?}", e);
+                    } else {
+                        eprintln!("{APP_NAME} error: {}", e.to_string());
+                    }
+                }
+                std::process::exit(2);
+            }
+            Ok(value) => value,
+        }
+    };
+}
+
 // argument parsing and command execution: doc comments are used by clap
 use clap::Parser;
 
@@ -1094,9 +985,36 @@ struct Args {
     #[arg(short, long)]
     quiet: bool,
 
-    /// generate machine readable output (JSON)
-    #[arg(short = 'p', long = "parsable-output")]
-    parsable_output: bool,
+    /// Specify the log file
+    #[arg(short, long, value_name = "LOGFILE")]
+    log: Option<String>,
+
+    /// Specify the log level
+    #[arg(
+        short = 'L',
+        long,
+        value_name = "LEVEL",
+        default_value_t = LogType::Warn,
+        default_missing_value = "warn",
+        value_enum,
+    )]
+    log_level: LogType,
+
+    /// Append to an existing log file if found
+    #[arg(short = 'a', long, requires = "log")]
+    log_append: bool,
+
+    /// No colors when logging (default when logging to file)
+    #[arg(short = 'P', long, group = "logformat")]
+    log_plain: bool,
+
+    /// Use colors when logging (default, ignored when logging to file)
+    #[arg(short = 'C', long, group = "logformat")]
+    log_color: bool,
+
+    /// Use JSON format for logging
+    #[arg(short = 'J', long, group = "logformat")]
+    log_json: bool,
 
     /// just write output without modifying the file system
     #[arg(short = 'D', long = "dry-run")]
@@ -1109,131 +1027,74 @@ struct Args {
 
 // entry point: mandatory arguments are handled by the parser
 fn main() -> std::io::Result<()> {
-    // formatter to write a message (here for coherence with other functions)
-    fn format_message(
-        parsable_output: bool,
-        operation: &str,
-        name: &str,
-        e: Option<Error>,
-        msg_parsable: &str,
-        msg_verbose: &str,
-    ) -> String {
-        match e {
-            Some(err) => {
-                if parsable_output {
-                    format_output_parsable(
-                        CONTEXT_MAIN,
-                        name,
-                        err.code(),
-                        operation,
-                        msg_parsable,
-                        &err.to_string(),
-                    )
-                } else {
-                    format!("error: {msg_verbose} / {err}")
-                }
-            }
-            _ => {
-                if parsable_output {
-                    format_output_parsable(
-                        CONTEXT_MAIN,
-                        name,
-                        ERR_CODE_OK,
-                        operation,
-                        msg_parsable,
-                        "",
-                    )
-                } else {
-                    format!("info: {msg_verbose}")
-                }
-            }
-        }
-    }
-
     let args = Args::parse();
 
-    // configuration file name is canonicalized in order to get a correct
-    // UNICODE path that includes the prefix, so that substitutions in
-    // destination file names can be performed without error; an empty
-    // PathBuf is produced if the file path does not exist, and this will
-    // cause an error while reading the configuration
-    let config = extract_config(
-        &PathBuf::from(args.config)
-            .canonicalize()
-            .unwrap_or_default(), // will result in a config error anyway
-        !args.quiet,
-        args.parsable_output,
-        args.dry_run,
+    // configure the logger
+    let log_file_name = args.log;
+    exit_if_fails!(
+        args.quiet,
+        log_init(
+            args.log_level,
+            log_file_name,
+            args.log_append,
+            args.log_color,
+            args.log_plain,
+            args.log_json,
+        )
     );
 
-    match config {
-        Ok((global, jobs)) => {
-            if !args.quiet {
-                println!(
-                    "{}",
-                    format_message(
-                        args.parsable_output,
-                        OPERATION_CONFIG,
-                        &global.config_file.as_os_str().to_string_lossy(),
-                        None,
-                        "",
-                        &format!(
-                            "using configuration file `{}`",
-                            global.config_file.as_os_str().to_string_lossy(),
-                        ),
-                    )
-                );
-            }
+    fn log(severity: LogType, when: &str, status: &str, message_code: i64, extra: Option<String>) {
+        log_base(
+            severity,
+            LOG_EMITTER_MAIN,
+            None,
+            LOG_ACTION_OTHER,
+            None,
+            None,
+            when,
+            status,
+            message_code,
+            extra,
+        );
+    }
 
-            match run_jobs(&global, &jobs) {
-                Ok(_) => {
-                    if !args.quiet {
-                        println!(
-                            "{}",
-                            format_message(
-                                args.parsable_output,
-                                OPERATION_MAIN_END,
-                                "",
-                                None,
-                                code_to_str_parsable(ERR_CODE_OK),
-                                code_to_str_readable(ERR_CODE_OK),
-                            )
-                        );
-                    }
-                    Ok(())
-                }
-                Err(e) => {
-                    if !args.quiet {
-                        eprintln!(
-                            "{}",
-                            format_message(
-                                args.parsable_output,
-                                OPERATION_MAIN_END,
-                                "",
-                                Some(e.into()),
-                                code_to_str_parsable(ERR_CODE_GENERIC),
-                                code_to_str_readable(ERR_CODE_GENERIC),
-                            )
-                        );
-                    }
-                    std::process::exit(2);
-                }
-            }
+    let (global, jobs) = exit_if_fails!(args.quiet, {
+        let using = PathBuf::from(args.config);
+        log_base(
+            LogType::Debug,
+            LOG_EMITTER_CONFIG,
+            None,
+            LOG_ACTION_OTHER,
+            Some(using.clone()),
+            None,
+            LOG_WHEN_INIT,
+            LOG_STATUS_MSG,
+            ERR_CODE_NONE,
+            None,
+        );
+        let using = soft_canonicalize(using).unwrap_or_default(); // will result in a config error anyway
+        extract_config(&using, args.dry_run)
+    });
+
+    match run_jobs(&global, &jobs) {
+        Ok(()) => {
+            log(
+                LogType::Debug,
+                LOG_WHEN_END,
+                LOG_STATUS_OK,
+                ERR_CODE_OK,
+                None,
+            );
+            Ok(())
         }
         Err(e) => {
-            if !args.quiet {
-                eprintln!(
-                    "{}",
-                    format_message(
-                        args.parsable_output,
-                        OPERATION_MAIN_END,
-                        "",
-                        Some(e),
-                        code_to_str_parsable(ERR_CODE_INVALID_CONFIG_FILE),
-                        code_to_str_readable(ERR_CODE_INVALID_CONFIG_FILE),
-                    )
-                );
-            }
+            log(
+                LogType::Error,
+                LOG_WHEN_END,
+                LOG_STATUS_FAIL,
+                ERR_CODE_GENERIC,
+                Some(format!("{e}")),
+            );
             std::process::exit(2);
         }
     }

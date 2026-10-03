@@ -12,6 +12,7 @@ use crate::constants::*;
 pub fn code_to_str_parsable(code: i64) -> &'static str {
     match code {
         ERR_CODE_OK => "OK",
+        ERR_CODE_NONE => "MSG",
         ERR_CODE_GENERIC => "ERR_GENERIC",
         ERR_CODE_INVALID_CONFIG_FILE => "ERR_INVALID_CONFIG",
         FOERR_GENERIC_FAILURE => "FOERR_GENERIC_FAILURE",
@@ -42,31 +43,32 @@ pub fn code_to_str_parsable(code: i64) -> &'static str {
 /// Transform an error code into a human readable string
 pub fn code_to_str_readable(code: i64) -> &'static str {
     match code {
-        ERR_CODE_OK => "application: operation succeeded",
-        ERR_CODE_GENERIC => "application: generic failure",
-        ERR_CODE_INVALID_CONFIG_FILE => "application: invalid config file",
-        FOERR_GENERIC_FAILURE => "file operation: generic failure",
-        FOERR_DESTINATION_IS_ITSELF => "file operation: failed attempt to copy on self",
-        FOERR_DESTINATION_IS_DIR => "file operation: destination is a directory",
-        FOERR_DESTINATION_IS_SYMLINK => "file operation: destination is a symbolic link",
-        FOERR_DESTINATION_IS_NEWER => "file operation: destination is more recent than source",
-        FOERR_DESTINATION_IS_IDENTICAL => "file operation: destination is identical to source",
-        FOERR_DESTINATION_IS_READONLY => "file operation: cannot overwrite destination",
-        FOERR_DESTINATION_EXISTS => "file operation: destination exists",
-        FOERR_DESTINATION_NOT_ACCESSIBLE => "file operation: destination is not accessible",
-        FOERR_CANNOT_CREATE_DIR => "file operation: cannot create directory",
-        FOERR_CANNOT_CREATE_FILE => "file operation: cannot create file",
-        FOERR_SOURCE_NOT_EXISTS => "file operation: source file does not exist",
-        FOERR_SOURCE_IS_DIR => "file operation: source file is a directory",
-        FOERR_SOURCE_IS_SYMLINK => "file operation: source file is a symbolic link",
-        FOERR_SOURCE_NOT_ACCESSIBLE => "file operation: source file is not accessible",
-        CJERR_GENERIC_FAILURE => "copy job: generic failure",
-        CJERR_DESTINATION_DIR_NOT_EXISTS => "copy job: destination directory does not exist",
-        CJERR_SOURCE_DIR_NOT_EXISTS => "copy job: source directory does not exist",
-        CJERR_NO_SOURCE_FILES => "copy job: no source files found",
-        CJERR_CANNOT_DETERMINE_DESTFILE => "copy job: cannot determine source",
-        CJERR_HALT_ON_COPY_ERROR => "copy job: ending job after copy error",
-        _ => "application: generic failure",
+        ERR_CODE_OK => "success",
+        ERR_CODE_NONE => "message",
+        ERR_CODE_GENERIC => "generic failure",
+        ERR_CODE_INVALID_CONFIG_FILE => "invalid config file",
+        FOERR_GENERIC_FAILURE => "generic failure",
+        FOERR_DESTINATION_IS_ITSELF => "failed attempt to copy on self",
+        FOERR_DESTINATION_IS_DIR => "destination is a directory",
+        FOERR_DESTINATION_IS_SYMLINK => "destination is a symbolic link",
+        FOERR_DESTINATION_IS_NEWER => "destination is more recent than source",
+        FOERR_DESTINATION_IS_IDENTICAL => "destination is identical to source",
+        FOERR_DESTINATION_IS_READONLY => "cannot overwrite destination",
+        FOERR_DESTINATION_EXISTS => "destination exists",
+        FOERR_DESTINATION_NOT_ACCESSIBLE => "destination is not accessible",
+        FOERR_CANNOT_CREATE_DIR => "cannot create directory",
+        FOERR_CANNOT_CREATE_FILE => "cannot create file",
+        FOERR_SOURCE_NOT_EXISTS => "source file does not exist",
+        FOERR_SOURCE_IS_DIR => "source file is a directory",
+        FOERR_SOURCE_IS_SYMLINK => "source file is a symbolic link",
+        FOERR_SOURCE_NOT_ACCESSIBLE => "source file is not accessible",
+        CJERR_GENERIC_FAILURE => "generic failure",
+        CJERR_DESTINATION_DIR_NOT_EXISTS => "destination directory does not exist",
+        CJERR_SOURCE_DIR_NOT_EXISTS => "source directory does not exist",
+        CJERR_NO_SOURCE_FILES => "no source files found",
+        CJERR_CANNOT_DETERMINE_DESTFILE => "cannot determine source",
+        CJERR_HALT_ON_COPY_ERROR => "ending job after copy error",
+        _ => "generic failure",
     }
 }
 
@@ -139,7 +141,7 @@ impl fmt::Display for Origin {
     }
 }
 
-/// The error type that is used throughout the application: implementations
+/// The error type that is used throughout the implementations
 /// of the `From` trait are used to implicitly convert from other error
 /// types, which in turn set the `origin` property.
 #[derive(Debug, Clone)]

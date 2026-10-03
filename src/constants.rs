@@ -21,6 +21,7 @@ pub const ERR_INVALID_CFG_ENTRY: &str = "invalid configuration entry";
 pub const ERR_MISSING_PARAMETER: &str = "missing parameter";
 pub const ERR_INVALID_PARAMETER: &str = "invalid parameter";
 pub const ERR_INVALID_PARAMETER_LIST: &str = "invalid list or list element";
+pub const ERR_LOGGER_NOT_INITIALIZED: &str = "could not initialize logger";
 
 // values for Outcome::Error (copy_file, remove_file)
 pub const FOERR_GENERIC_FAILURE: i64 = 1001;
@@ -49,20 +50,30 @@ pub const CJERR_HALT_ON_COPY_ERROR: i64 = 2041;
 
 // values for generic outcomes
 pub const ERR_CODE_OK: i64 = 0;
+pub const ERR_CODE_NONE: i64 = -1;
 pub const ERR_CODE_GENERIC: i64 = 9999;
 pub const ERR_CODE_INVALID_CONFIG_FILE: i64 = 9998;
 
-// context identifiers for output
-pub const CONTEXT_MAIN: &str = "MAIN";
-pub const CONTEXT_JOB: &str = "JOB";
-pub const CONTEXT_TASK: &str = "TASK";
-
 // operation identifiers for output
-pub const OPERATION_JOB_COPY: &str = "COPY";
-pub const OPERATION_JOB_DEL: &str = "DEL";
-pub const OPERATION_JOB_BEGIN: &str = "BEGIN_JOB";
-pub const OPERATION_JOB_END: &str = "END_JOB";
-pub const OPERATION_MAIN_END: &str = "END_MAIN";
-pub const OPERATION_CONFIG: &str = "CONFIG";
+pub const LOG_ACTION_COPY: &str = "COPY";
+pub const LOG_ACTION_DEL: &str = "DEL";
+pub const LOG_ACTION_JOB: &str = "JOB";
+pub const LOG_ACTION_OTHER: &str = "OTHER";
+
+pub const LOG_EMITTER_MAIN: &str = "MAIN";
+pub const LOG_EMITTER_CONFIG: &str = "CONFIG";
+pub const LOG_EMITTER_GLOBAL: &str = "GLOBAL";
+pub const LOG_EMITTER_JOB: &str = "JOB";
+
+pub const LOG_WHEN_INIT: &str = "INIT";
+pub const LOG_WHEN_START: &str = "START";
+pub const LOG_WHEN_END: &str = "END";
+pub const LOG_WHEN_PROC: &str = "PROC";
+
+pub const LOG_STATUS_OK: &str = "OK";
+pub const LOG_STATUS_FAIL: &str = "FAIL";
+pub const LOG_STATUS_IND: &str = "IND";
+pub const LOG_STATUS_MSG: &str = "MSG";
+pub const LOG_STATUS_ERR: &str = "ERR";
 
 // end.
