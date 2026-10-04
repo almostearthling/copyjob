@@ -41,15 +41,20 @@
 use lazy_static::lazy_static;
 use parking_lot::RwLock;
 
-use crate::constants::{APP_NAME, ERR_LOGGER_NOT_INITIALIZED, LOG_ACTION_COPY, LOG_ACTION_DEL, LOG_ACTION_JOB, LOG_ACTION_OTHER, LOG_EMITTER_CONFIG, LOG_EMITTER_GLOBAL, LOG_EMITTER_JOB, LOG_EMITTER_MAIN, LOG_STATUS_ERR, LOG_STATUS_FAIL, LOG_STATUS_IND, LOG_STATUS_MSG, LOG_STATUS_OK, LOG_WHEN_END, LOG_WHEN_INIT, LOG_WHEN_PROC, LOG_WHEN_START};
+use crate::constants::{
+    APP_NAME, ERR_LOGGER_NOT_INITIALIZED, LOG_ACTION_COPY, LOG_ACTION_DEL, LOG_ACTION_JOB,
+    LOG_ACTION_OTHER, LOG_EMITTER_CONFIG, LOG_EMITTER_GLOBAL, LOG_EMITTER_JOB, LOG_EMITTER_MAIN,
+    LOG_STATUS_ERR, LOG_STATUS_FAIL, LOG_STATUS_IND, LOG_STATUS_MSG, LOG_STATUS_OK, LOG_WHEN_END,
+    LOG_WHEN_INIT, LOG_WHEN_PROC, LOG_WHEN_START, STR_UNDEFINED_VALUE,
+};
 use crate::utility::result::{code_to_str_parsable, code_to_str_readable};
+use clap::ValueEnum;
 use flexi_logger::{DeferredNow, FileSpec, Logger, style};
 use log::Record;
 use log::{debug, error, info, trace, warn};
 use nu_ansi_term::Style;
 use serde_json::json;
 use std::path::PathBuf;
-use clap::ValueEnum;
 
 // the following global flag is exposed here because it looks like there is
 // no actual way to pass anything but a string as payload to the logger, so
@@ -262,48 +267,46 @@ pub fn log(
     // we can afford to check that logging is consistent when debugging,
     // just to avoid surprises in release veersions: this might seem
     // heavy but it doesn't even compile in release mode
-    assert!(vec![
-        LOG_EMITTER_MAIN,
-        LOG_EMITTER_CONFIG,
-        LOG_EMITTER_GLOBAL,
-        LOG_EMITTER_JOB,
-    ].contains(&emitter));
-    assert!(vec![
-        LOG_ACTION_COPY,
-        LOG_ACTION_DEL,
-        LOG_ACTION_JOB,
-        LOG_ACTION_OTHER,
-    ].contains(&action));
-    assert!(vec![
-        LOG_WHEN_INIT,
-        LOG_WHEN_START,
-        LOG_WHEN_END,
-        LOG_WHEN_PROC,
-    ].contains(&when));
-    assert!(vec![
-        LOG_STATUS_OK,
-        LOG_STATUS_FAIL,
-        LOG_STATUS_ERR,
-        LOG_STATUS_MSG,
-        LOG_STATUS_IND,
-    ].contains(&status));
+    debug_assert!(
+        vec![
+            LOG_EMITTER_MAIN,
+            LOG_EMITTER_CONFIG,
+            LOG_EMITTER_GLOBAL,
+            LOG_EMITTER_JOB,
+        ]
+        .contains(&emitter)
+    );
+    debug_assert!(
+        vec![
+            LOG_ACTION_COPY,
+            LOG_ACTION_DEL,
+            LOG_ACTION_JOB,
+            LOG_ACTION_OTHER,
+        ]
+        .contains(&action)
+    );
+    debug_assert!(
+        vec![LOG_WHEN_INIT, LOG_WHEN_START, LOG_WHEN_END, LOG_WHEN_PROC,].contains(&when)
+    );
+    debug_assert!(
+        vec![
+            LOG_STATUS_OK,
+            LOG_STATUS_FAIL,
+            LOG_STATUS_ERR,
+            LOG_STATUS_MSG,
+            LOG_STATUS_IND,
+        ]
+        .contains(&status)
+    );
 
     // when configuring, only the source is set (to the config file)
-    assert!(emitter != LOG_EMITTER_CONFIG || (
-        destination.is_none() && source.is_some()
-    ));
+    debug_assert!(emitter != LOG_EMITTER_CONFIG || (destination.is_none() && source.is_some()));
     // when logging COPY, both source and destionation must have a value
-    assert!(action != LOG_ACTION_COPY || (
-        destination.is_some() && source.is_some()
-    ));
+    debug_assert!(action != LOG_ACTION_COPY || (destination.is_some() && source.is_some()));
     // when logging DEL, destination must be specified but not source
-    assert!(action != LOG_ACTION_DEL || (
-        destination.is_some() && source.is_none()
-    ));
-    // when logging JOB, destination and source (dirs) must be Some
-    assert!(action != LOG_ACTION_JOB || (
-        destination.is_some() && source.is_some()
-    ));
+    debug_assert!(action != LOG_ACTION_DEL || (destination.is_some() && source.is_none()));
+    // when logging JOB, destination or source (dirs) must be Some
+    debug_assert!(action != LOG_ACTION_JOB || (destination.is_some() || source.is_some()));
 
     let payload = if *LOGGER_EMITS_JSON.read() {
         json!({
@@ -311,8 +314,8 @@ pub fn log(
                 "emitter": emitter,
                 "item": item,
                 "action": action,
-                "source": source,
-                "destination": destination,
+                "source": &source.map(|p| p.to_string_lossy().to_string()),
+                "destination": &destination.map(|p| p.to_string_lossy().to_string()),
             }),
             "message_type": json!({
                 "when": when,
@@ -336,30 +339,31 @@ pub fn log(
                 // we know that source and destination are not None
                 format!(
                     "{action}: `{}` -> `{}`",
-                    source.unwrap().to_string_lossy(),
-                    destination.unwrap().to_string_lossy(),
+                    source
+                        .unwrap_or(PathBuf::from(STR_UNDEFINED_VALUE))
+                        .to_string_lossy(),
+                    destination
+                        .unwrap_or(PathBuf::from(STR_UNDEFINED_VALUE))
+                        .to_string_lossy(),
                 )
-            },
+            }
             LOG_ACTION_DEL => {
-                format!(
-                    "{action}: `{}`",
-                    destination.unwrap().to_string_lossy(),
-                )
-            },
+                format!("{action}: `{}`", destination.unwrap().to_string_lossy(),)
+            }
             LOG_ACTION_JOB => {
                 format!(
                     "COPY_JOB: `{}` -> `{}`",
                     source.unwrap().to_string_lossy(),
                     destination.unwrap().to_string_lossy(),
                 )
-            },
+            }
             _ => {
                 if emitter == LOG_EMITTER_CONFIG {
                     format!("CONFIG (using `{}`)", source.unwrap().to_string_lossy())
                 } else {
                     format!("{action}")
                 }
-            },
+            }
         };
         let message = if let Some(s) = message_extra {
             format!("{} / {s}", code_to_str_readable(message_code))

@@ -8,6 +8,7 @@ pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const ERR_INVALID_VALUE_FOR_ENTRY: &str = "invalid value for entry";
 pub const ERR_INVALID_VALUE_FOR_LIST_ENTRY: &str = "invalid value for list entry";
 
+pub const STR_UNDEFINED_VALUE: &str = "<undefined>";
 pub const STR_UNKNOWN_VALUE: &str = "<unknown>";
 pub const STR_INVALID_TYPE: &str = "<invalid_type>";
 pub const STR_INVALID_VALUE: &str = "<invalid_value>";
