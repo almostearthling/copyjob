@@ -35,7 +35,7 @@ pub fn code_to_str_parsable(code: i64) -> &'static str {
         CJERR_SOURCE_DIR_NOT_EXISTS => "CJERR_SOURCE_DIR_NOT_EXISTS",
         CJERR_NO_SOURCE_FILES => "CJERR_NO_SOURCE_FILES",
         CJERR_CANNOT_DETERMINE_DESTFILE => "CJERR_CANNOT_DETERMINE_DESTFILE",
-        CJERR_HALT_ON_COPY_ERROR => "CJERR_HALT_ON_COPY_ERROR",
+        CJERR_HALT_ON_ERROR => "CJERR_HALT_ON_ERROR",
         _ => "ERR_GENERIC",
     }
 }
@@ -67,7 +67,7 @@ pub fn code_to_str_readable(code: i64) -> &'static str {
         CJERR_SOURCE_DIR_NOT_EXISTS => "source directory does not exist",
         CJERR_NO_SOURCE_FILES => "no source files found",
         CJERR_CANNOT_DETERMINE_DESTFILE => "cannot determine source",
-        CJERR_HALT_ON_COPY_ERROR => "ending job after copy error",
+        CJERR_HALT_ON_ERROR => "ending job after error",
         _ => "generic failure",
     }
 }

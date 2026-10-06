@@ -605,7 +605,7 @@ fn run_single_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                             Some(format!("{ERR_FAILED} ({err})")),
                         );
                         if job.halt_on_errors {
-                            return Err(Error::new(Kind::Failed, CJERR_HALT_ON_COPY_ERROR));
+                            return Err(Error::new(Kind::Failed, CJERR_HALT_ON_ERROR));
                         };
                     }
                 };
@@ -629,7 +629,7 @@ fn run_single_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                     None,
                 );
                 if job.halt_on_errors {
-                    return Err(Error::new(Kind::Failed, CJERR_HALT_ON_COPY_ERROR));
+                    return Err(Error::new(Kind::Failed, CJERR_HALT_ON_ERROR));
                 }
             }
         }
@@ -702,7 +702,7 @@ fn run_single_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                             Some(format!("{ERR_FAILED} ({err})")),
                         );
                         if job.halt_on_errors {
-                            return Err(Error::new(Kind::Failed, CJERR_HALT_ON_COPY_ERROR));
+                            return Err(Error::new(Kind::Failed, CJERR_HALT_ON_ERROR));
                         };
                     }
                 }
@@ -734,55 +734,10 @@ fn run_single_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
 fn run_jobs(
     global_config: &CopyJobGlobalConfig,
     job_configs: &[CopyJobConfig],
-) -> std::io::Result<()> {
-    // local helpers:
-    fn log(severity: LogType, when: &str, status: &str, message_code: i64, extra: Option<String>) {
-        log_base(
-            severity,
-            LOG_EMITTER_GLOBAL,
-            None,
-            LOG_ACTION_OTHER,
-            None,
-            None,
-            when,
-            status,
-            message_code,
-            extra,
-        );
-    }
-
+) -> Result<()> {
     for job in job_configs {
         if global_config.active_jobs.contains(&job.job_name) {
-            match run_single_job(job, global_config.dry_run) {
-                Ok(()) => {
-                    log(
-                        LogType::Debug,
-                        LOG_WHEN_END,
-                        LOG_STATUS_OK,
-                        ERR_CODE_OK,
-                        None,
-                    );
-                }
-                Err(err) => {
-                    log(
-                        if global_config.halt_on_errors {
-                            LogType::Error
-                        } else {
-                            LogType::Warn
-                        },
-                        LOG_WHEN_END,
-                        LOG_STATUS_ERR,
-                        err.code(),
-                        Some(format!("{err}")),
-                    );
-                    if global_config.halt_on_errors {
-                        return Err(std::io::Error::new(
-                            std::io::ErrorKind::Interrupted,
-                            code_to_str_parsable(ERR_CODE_GENERIC).to_string(),
-                        ));
-                    }
-                }
-            }
+            run_single_job(job, global_config.dry_run)?
         }
     }
 
@@ -928,7 +883,7 @@ fn main() -> std::io::Result<()> {
                 LOG_WHEN_END,
                 LOG_STATUS_FAIL,
                 ERR_CODE_GENERIC,
-                Some(format!("{e}")),
+                Some(e.to_string()),
             );
             std::process::exit(2);
         }

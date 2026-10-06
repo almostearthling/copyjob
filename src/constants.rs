@@ -46,7 +46,7 @@ pub const CJERR_SOURCE_DIR_NOT_EXISTS: i64 = 2011;
 pub const CJERR_DESTINATION_DIR_NOT_EXISTS: i64 = 2012;
 pub const CJERR_NO_SOURCE_FILES: i64 = 2013;
 pub const CJERR_CANNOT_DETERMINE_DESTFILE: i64 = 2021;
-pub const CJERR_HALT_ON_COPY_ERROR: i64 = 2041;
+pub const CJERR_HALT_ON_ERROR: i64 = 2041;
 
 // values for generic outcomes
 pub const ERR_CODE_OK: i64 = 0;
