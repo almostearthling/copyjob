@@ -38,9 +38,6 @@
 //! utility the state of the scheduler, and possibily give the opportunity to
 //! organize communication to the user in a friendlier way.
 
-use lazy_static::lazy_static;
-use parking_lot::RwLock;
-
 use crate::constants::{
     APP_NAME, ERR_LOGGER_NOT_INITIALIZED, LOG_ACTION_COPY, LOG_ACTION_DEL, LOG_ACTION_JOB,
     LOG_ACTION_OTHER, LOG_EMITTER_CONFIG, LOG_EMITTER_GLOBAL, LOG_EMITTER_JOB, LOG_EMITTER_MAIN,
@@ -55,14 +52,18 @@ use log::{debug, error, info, trace, warn};
 use nu_ansi_term::Style;
 use serde_json::json;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering::Relaxed;
 
 // the following global flag is exposed here because it looks like there is
 // no actual way to pass anything but a string as payload to the logger, so
 // the common logging function should know whether the logger is initialized
 // to return JSON message and build the JSON payload itself
-lazy_static! {
-    static ref LOGGER_EMITS_JSON: RwLock<bool> = RwLock::new(false);
-}
+// lazy_static! {
+//     static ref LOGGER_EMITS_JSON: RwLock<bool> = RwLock::new(false);
+// }
+
+static LOGGER_EMITS_JSON: AtomicBool = AtomicBool::new(false);
 
 // time stamp format that is used by the provided format functions.
 const NOW_FMT: &str = "%Y-%m-%dT%H:%M:%S%.3f";
@@ -165,7 +166,7 @@ pub fn init(
                     } else if logplain {
                         log_format_plain
                     } else if logjson {
-                        *LOGGER_EMITS_JSON.write() = true;
+                        LOGGER_EMITS_JSON.store(true, Relaxed);
                         log_format_json
                     } else {
                         log_format_plain
@@ -194,7 +195,7 @@ pub fn init(
                     } else if logplain {
                         log_format_plain
                     } else if logjson {
-                        *LOGGER_EMITS_JSON.write() = true;
+                        LOGGER_EMITS_JSON.store(true, Relaxed);
                         log_format_json
                     } else {
                         log_format_colors
@@ -308,7 +309,7 @@ pub fn log(
     // when logging JOB, destination or source (dirs) must be Some
     debug_assert!(action != LOG_ACTION_JOB || (destination.is_some() || source.is_some()));
 
-    let payload = if *LOGGER_EMITS_JSON.read() {
+    let payload = if LOGGER_EMITS_JSON.load(Relaxed) {
         json!({
             "context": json!({
                 "emitter": emitter,
