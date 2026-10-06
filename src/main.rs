@@ -431,7 +431,7 @@ fn list_files_matching(
 
 /// Perform a single copy job, by building a list of files to copy and by
 /// copying them if possible using `copyfile` seen above.
-fn run_single_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
+fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
     let log = |severity, action, source, destination, when, status, message_code, message_extra| {
         log_base(
             severity,
@@ -728,22 +728,6 @@ fn run_single_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
     Ok(())
 }
 
-/// Perform all jobs, according to the passed global config object and list
-/// of job configuration objects, that is the result of extract_config as
-/// defined above.
-fn run_jobs(
-    global_config: &CopyJobGlobalConfig,
-    job_configs: &[CopyJobConfig],
-) -> Result<()> {
-    for job in job_configs {
-        if global_config.active_jobs.contains(&job.job_name) {
-            run_single_job(job, global_config.dry_run)?
-        }
-    }
-
-    Ok(())
-}
-
 // this is similar to my usual exiterror
 macro_rules! exit_if_fails {
     ( $quiet:expr, $might_fail:expr ) => {
@@ -866,7 +850,18 @@ fn main() -> std::io::Result<()> {
         extract_config(&using, args.dry_run)
     });
 
-    match run_jobs(&global, &jobs) {
+    // run all configured and active jobs, and halt on errors
+    let mut res = Ok(());
+    for job in jobs {
+        if global.active_jobs.contains(&job.job_name) {
+            res = run_job(&job, global.dry_run);
+            if res.is_err() {
+                break;
+            }
+        }
+    }
+
+    match res {
         Ok(()) => {
             log(
                 LogType::Debug,
