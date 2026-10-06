@@ -2,9 +2,8 @@
 //! An utility to perform complex copy operations based on TOML files
 //! (c) 2023-2026, Francesco Garosi
 
-use std::fs;
-
 use std::env;
+use std::fs;
 
 use lazy_static::lazy_static;
 
@@ -25,10 +24,10 @@ mod utility;
 
 use constants::*;
 use utility::cfghelp::*;
+use utility::fileops::*;
 use utility::logging::{LogType, init as log_init, log as log_base};
 use utility::pathutils::*;
 use utility::result::*;
-use utility::fileops::*;
 
 // Structures used for a copy job configuration and the global configuration:
 // values provided in CopyJobConfig default to the ones provided globally in
@@ -559,19 +558,33 @@ fn run_single_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                     job.trash_on_overwrite,
                     dry_run,
                 ) {
-                    Ok(()) => {
-                        num_files_copied += 1;
-                        log(
-                            LogType::Info,
-                            LOG_ACTION_COPY,
-                            Some(srcfile_relative.clone()),
-                            Some(destfile_relative.clone()),
-                            LOG_WHEN_PROC,
-                            LOG_STATUS_OK,
-                            ERR_CODE_OK,
-                            None,
-                        );
-                    }
+                    Ok(o) => match o {
+                        Outcome::Done => {
+                            num_files_copied += 1;
+                            log(
+                                LogType::Info,
+                                LOG_ACTION_COPY,
+                                Some(srcfile_relative.clone()),
+                                Some(destfile_relative.clone()),
+                                LOG_WHEN_PROC,
+                                LOG_STATUS_OK,
+                                ERR_CODE_OK,
+                                Some(format!("copied")),
+                            );
+                        }
+                        Outcome::Skipped(code) => {
+                            log(
+                                LogType::Info,
+                                LOG_ACTION_COPY,
+                                Some(srcfile_relative.clone()),
+                                Some(destfile_relative.clone()),
+                                LOG_WHEN_PROC,
+                                LOG_STATUS_OK,
+                                code,
+                                Some(format!("skipped")),
+                            );
+                        }
+                    },
                     Err(err) => {
                         log(
                             if job.halt_on_errors {
@@ -642,19 +655,33 @@ fn run_single_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                     PathBuf::from(&item.file_name().unwrap_or(OsStr::new(""))).to_path_buf()
                 };
                 match remove_file(&item, job.follow_symlinks, job.trash_on_delete, dry_run) {
-                    Ok(()) => {
-                        num_files_deleted += 1;
-                        log(
-                            LogType::Info,
-                            LOG_ACTION_DEL,
-                            None,
-                            Some(rmfile_relative.clone()),
-                            LOG_WHEN_PROC,
-                            LOG_STATUS_OK,
-                            ERR_CODE_OK,
-                            None,
-                        );
-                    }
+                    Ok(o) => match o {
+                        Outcome::Done => {
+                            num_files_deleted += 1;
+                            log(
+                                LogType::Info,
+                                LOG_ACTION_DEL,
+                                None,
+                                Some(rmfile_relative.clone()),
+                                LOG_WHEN_PROC,
+                                LOG_STATUS_OK,
+                                ERR_CODE_OK,
+                                Some(format!("deleted")),
+                            );
+                        }
+                        Outcome::Skipped(code) => {
+                            log(
+                                LogType::Info,
+                                LOG_ACTION_DEL,
+                                None,
+                                Some(rmfile_relative.clone()),
+                                LOG_WHEN_PROC,
+                                LOG_STATUS_OK,
+                                code,
+                                Some(format!("skipped")),
+                            );
+                        }
+                    },
                     Err(err) => {
                         log(
                             if job.halt_on_errors {

@@ -6,14 +6,30 @@ use std::fs::create_dir_all;
 use std::fs::metadata;
 use std::path::{Path, PathBuf};
 
-use std::io::BufReader;
-use std::io::Read;
 use data_encoding::HEXLOWER;
 use sha2::{Digest, Sha256};
+use std::io::BufReader;
+use std::io::Read;
 
-use crate::utility::result::*;
 use crate::constants::*;
+use crate::utility::fileops::Outcome::Done;
+use crate::utility::fileops::Outcome::Skipped;
+use crate::utility::result::*;
 
+/// Reports whether or not a file operation has been carried out or not
+pub enum Outcome {
+    Done,
+    Skipped(i64),
+}
+
+// impl Outcome {
+//     fn is_done(self) -> bool {
+//         match self {
+//             Done => { true },
+//             _ => { false }
+//         }
+//     }
+// }
 
 // helper to calculate hash for a single file
 // see https://stackoverflow.com/a/71606608/5138770
@@ -35,8 +51,6 @@ fn sha256_digest(path: &Path) -> std::io::Result<String> {
     };
     Ok(HEXLOWER.encode(digest.as_ref()))
 }
-
-
 
 /// Attempt to copy a single file to a destination (provided as a path):
 /// source and destination are full or relative to current FS position,
@@ -65,9 +79,9 @@ pub fn copy_file(
     create_directories: bool,
     trash_on_overwrite: bool,
     dry_run: bool,
-) -> Result<()> {
+) -> Result<Outcome> {
     // normalize paths
-    let source_path = source.canonicalize().unwrap_or_default();
+    let source_path = source.canonicalize()?;
     let destination_path = destination
         .canonicalize()
         .unwrap_or(PathBuf::from(&destination));
@@ -89,8 +103,7 @@ pub fn copy_file(
                 return Err(Error::new(Kind::Invalid, FOERR_SOURCE_IS_DIR));
             }
             if s_stat.is_symlink() && !follow_symlinks {
-                // TODO: is it expected?
-                return Err(Error::new(Kind::Forbidden, FOERR_SOURCE_IS_SYMLINK));
+                return Ok(Skipped(FOERR_SOURCE_IS_SYMLINK));
             }
             match metadata(&destination_path) {
                 Ok(d_stat) => {
@@ -98,15 +111,15 @@ pub fn copy_file(
                     // whether overwrite is false, compare s_stat, d_stat and
                     // possibly hashes
                     if !overwrite {
-                        return Err(Error::new(Kind::Forbidden, FOERR_DESTINATION_EXISTS));
+                        return Ok(Skipped(FOERR_DESTINATION_EXISTS));
                     } else if d_stat.is_dir() {
                         return Err(Error::new(Kind::Invalid, FOERR_DESTINATION_IS_DIR));
                     } else if d_stat.is_symlink() && !follow_symlinks {
-                        return Err(Error::new(Kind::Forbidden, FOERR_DESTINATION_IS_SYMLINK));
+                        return Ok(Skipped(FOERR_DESTINATION_IS_SYMLINK));
                     }
 
                     if skip_newer && s_stat.modified()? <= d_stat.modified()? {
-                        return Err(Error::new(Kind::Invalid, FOERR_DESTINATION_IS_NEWER));
+                        return Ok(Skipped(FOERR_DESTINATION_IS_NEWER));
                     }
 
                     // only when asked perform content checking via SHA256
@@ -114,7 +127,7 @@ pub fn copy_file(
                     if check_content
                         && sha256_digest(&source_path)? == sha256_digest(&destination_path)?
                     {
-                        return Err(Error::new(Kind::Invalid, FOERR_DESTINATION_IS_IDENTICAL));
+                        return Ok(Skipped(FOERR_DESTINATION_IS_IDENTICAL));
                     }
 
                     // if this point is reached we are actually overwriting
@@ -162,16 +175,16 @@ pub fn copy_file(
 
                 // actually copy the file using OS API
                 fs::copy(&source_path, &destination_path)
-                    .map(|_| ())
+                    .map(|_| Done)
                     .map_err(|e| {
                         if e.kind() == std::io::ErrorKind::PermissionDenied {
                             Error::new(Kind::Forbidden, FOERR_DESTINATION_IS_READONLY)
                         } else {
-                            Error::new(Kind::Unknown, ERR_CODE_GENERIC)
+                            Error::new_with_message(Kind::Unknown, ERR_CODE_GENERIC, &e.to_string())
                         }
                     })
             } else {
-                Ok(())
+                Ok(Done)
             }
         }
         Err(_) => Err(Error::new(Kind::Unavailable, FOERR_SOURCE_NOT_ACCESSIBLE)),
@@ -184,7 +197,7 @@ pub fn remove_file(
     follow_symlinks: bool,
     trash_on_delete: bool,
     dry_run: bool,
-) -> Result<()> {
+) -> Result<Outcome> {
     // normalize paths
     let destination_path = destination.canonicalize().unwrap_or_default();
 
@@ -194,27 +207,40 @@ pub fn remove_file(
             if d_stat.is_dir() {
                 Err(Error::new(Kind::Invalid, FOERR_DESTINATION_IS_DIR))
             } else if d_stat.is_symlink() && !follow_symlinks {
-                Err(Error::new(Kind::Invalid, FOERR_DESTINATION_IS_SYMLINK))
+                Ok(Skipped(FOERR_DESTINATION_IS_SYMLINK))
             } else if trash_on_delete {
                 if !dry_run {
                     trash::delete(&destination_path)
                         .or_else(|_| fs::remove_file(destination_path))
-                        .map_err(|_| {
-                            Error::new(Kind::Unavailable, FOERR_DESTINATION_NOT_ACCESSIBLE)
+                        .map(|_| Done)
+                        .map_err(|e| {
+                            Error::new_with_message(
+                                Kind::Unavailable,
+                                FOERR_DESTINATION_NOT_ACCESSIBLE,
+                                &e.to_string(),
+                            )
                         })
                 } else {
-                    Ok(())
+                    Ok(Done)
                 }
             } else if !dry_run {
                 fs::remove_file(destination_path)
-                    .map_err(|_| Error::new(Kind::Unavailable, FOERR_DESTINATION_NOT_ACCESSIBLE))
+                    .map(|_| Done)
+                    .map_err(|e| {
+                        Error::new_with_message(
+                            Kind::Unavailable,
+                            FOERR_DESTINATION_NOT_ACCESSIBLE,
+                            &e.to_string(),
+                        )
+                    })
             } else {
-                Ok(())
+                Ok(Done)
             }
         }
-        Err(_) => Err(Error::new(
+        Err(e) => Err(Error::new_with_message(
             Kind::Unavailable,
             FOERR_DESTINATION_NOT_ACCESSIBLE,
+            &e.to_string(),
         )),
     }
 }

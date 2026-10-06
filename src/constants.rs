@@ -17,7 +17,6 @@ pub const STR_INVALID_VALUE: &str = "<invalid_value>";
 pub const ERR_FAILED: &str = "failed";
 
 pub const ERR_INVALID_CONFIG: &str = "invalid configuration";
-
 pub const ERR_INVALID_CFG_ENTRY: &str = "invalid configuration entry";
 pub const ERR_MISSING_PARAMETER: &str = "missing parameter";
 pub const ERR_INVALID_PARAMETER: &str = "invalid parameter";
