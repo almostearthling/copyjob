@@ -197,7 +197,7 @@ pub fn normalize_path_slashes(path: &Path, add_trailing: bool) -> PathBuf {
         // append the new character as long as it is possible: if it is a
         // separator it is appended only if the result does not already end
         // with a separator
-        if *c == UNIX_SEP && !bres.ends_with(&[*c]) {
+        if *c != UNIX_SEP || !bres.ends_with(&[*c]) {
             bres.push(*c);
         }
     }
