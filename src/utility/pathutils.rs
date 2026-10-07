@@ -176,7 +176,7 @@ pub fn normalize_path_slashes(path: &Path, add_trailing: bool) -> PathBuf {
 
     // this is the part where the new bstring might have needed to be extended
     // if we didn't add the extra byte of capacity at the beginning
-    if add_trailing {
+    if add_trailing && !bres.ends_with(&[WIN_SEP]) {
         bres.push(WIN_SEP);
     }
 
@@ -204,7 +204,7 @@ pub fn normalize_path_slashes(path: &Path, add_trailing: bool) -> PathBuf {
 
     // this is the part where the new bstring might have needed to be extended
     // if we didn't add the extra byte of capacity at the beginning
-    if add_trailing {
+    if add_trailing && !bres.ends_with(&[UNIX_SEP]) {
         bres.push(UNIX_SEP);
     }
 
@@ -220,19 +220,24 @@ pub fn interpolate_dir(
     sys_vars: &HashMap<OsString, OsString>,
 ) -> Result<PathBuf> {
     Ok(PathBuf::from({
+        // note that we first replace the variables that have been defined in
+        // the configuration files, which can contain themselves start markers
+        // and therefore we replace markers just after that; markers in the
+        // environment variables are ignored, because if present they are not
+        // supposed to be aware of copyjob
         OsString::from(raw)
-            .replace_start(
-                &markers
-                    .iter()
-                    .map(|(k, v)| (OsString::from(*k), v.as_os_str().to_owned()))
-                    .collect(),
-            )?
             .replace_vars(
                 &RE_VARMENTION_LOC,
                 &FMT_VARMENTION_LOC,
                 &local_vars
                     .iter()
                     .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+            )?
+            .replace_start(
+                &markers
+                    .iter()
+                    .map(|(k, v)| (OsString::from(*k), v.as_os_str().to_owned()))
                     .collect(),
             )?
             .replace_vars(

@@ -26,6 +26,6 @@ soft-canonicalize = { version = "0.5", features = ["dunce"] }
 
 [profile.release]
 strip = true        # strip executable
-opt-level = "z"     # optimize for size
+opt-level = 2       # perform some optimizations
 lto = true
 panic = 'abort'     # remove garbage strings from executable

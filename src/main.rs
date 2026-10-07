@@ -167,9 +167,10 @@ fn extract_config(
     // check that global keys are all known: if not report offending key
     cfg_check_keys(&config_map, &allowed_globals)?;
 
-    // strings that will be used to build actal paths
-    let var_user_home = home_dir().unwrap();
-    let var_config_file_dir = PathBuf::from(config_file.clone().parent().unwrap());
+    // strings that will be used to build actual paths: the final join is
+    // to possibly add trailing slashes or backslashes
+    let var_user_home = home_dir().unwrap().join("");
+    let var_config_file_dir = PathBuf::from(config_file.clone().parent().unwrap()).join("");
 
     // here I should use WIN_SEP and UNIX_SEP, but I really don't
     // want to allocate even more and use an owned String
