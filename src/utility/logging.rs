@@ -59,10 +59,6 @@ use std::sync::atomic::Ordering::Relaxed;
 // no actual way to pass anything but a string as payload to the logger, so
 // the common logging function should know whether the logger is initialized
 // to return JSON message and build the JSON payload itself
-// lazy_static! {
-//     static ref LOGGER_EMITS_JSON: RwLock<bool> = RwLock::new(false);
-// }
-
 static LOGGER_EMITS_JSON: AtomicBool = AtomicBool::new(false);
 
 // time stamp format that is used by the provided format functions.
@@ -146,14 +142,11 @@ pub fn init(
         LogType::Error => "error",
     };
 
-    // the following line is to avoid other crates logging (e.g. `zbus`)
-    // so it can be commented out for debugging purposes and replaced with
-    // the subsequent commented out line. A reminder to documentation:
-    // https://docs.rs/flexi_logger/latest/flexi_logger/struct.LogSpecification.html
-    // FIXME: maybe we can choose the actual configuration string
-    //        automatically according to the current build settings?
+    // the following format is to avoid other crates logging (e.g. zbus)
+    #[cfg(not(debug_assertions))]
     let logspec = format!("{APP_NAME}={level}");
-    // let logspec = format!("{level}");
+    #[cfg(debug_assertions)]
+    let logspec = format!("{level}");
 
     let mut logger;
     logger = Logger::try_with_str(logspec);
