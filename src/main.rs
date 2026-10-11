@@ -17,7 +17,7 @@ use dirs::home_dir;
 use soft_canonicalize::soft_canonicalize;
 use walkdir::WalkDir;
 
-use cfgmap::{CfgMap, CfgValue, Checkable, Condition::*};
+use cfgmap::{CfgMap, CfgValue};
 
 mod constants;
 mod utility;
@@ -201,22 +201,19 @@ fn extract_config(
     // 2. HashMap of local variables (being a map this case has no shortcut)
     let cur_key = "variables";
     let cur_item = config_map.get(cur_key);
-    if !cur_item.check_that(IsMap) {
-        return Err(error_invalid_config(cur_key));
-    } else {
-        match cur_item {
-            Some(c) => {
-                for (key, item) in c.as_map().unwrap().iter() {
-                    if !item.is_str() {
-                        return Err(error_invalid_config(cur_key));
-                    }
-                    global_config.variables.insert(
-                        OsString::from(key.as_str()),
-                        OsString::from(item.as_str().unwrap()),
-                    );
+    if let Some(c) = cur_item {
+        if !c.is_map() {
+            return Err(error_invalid_config(cur_key));
+        } else {
+            for (key, item) in c.as_map().unwrap().iter() {
+                if !item.is_str() {
+                    return Err(error_invalid_config(cur_key));
                 }
+                global_config.variables.insert(
+                    OsString::from(key.as_str()),
+                    OsString::from(item.as_str().unwrap()),
+                );
             }
-            None => { /* OK to go, default already set */ }
         }
     }
 
@@ -389,9 +386,9 @@ fn list_files_matching(
     // startup directory is already canonicalized we can use specific REs for
     // path separators on Windows and UNIX
     #[cfg(windows)]
-    let psre = format!("\\{WIN_SEP}");
+    let psre = format!("\\{}", WIN_SEP as char);
     #[cfg(unix)]
-    let psre = format!("\\{UNIX_SEP}");
+    let psre = format!("\\{UNIX_SEP}" as char);
     let excludedir_match = RegexBuilder::new(format!("{psre}{excludedir_pattern}{psre}").as_str())
         .case_insensitive(!case_sensitive)
         .build()
@@ -412,7 +409,7 @@ fn list_files_matching(
             let subdir_name = if entry_dir.pop() {
                 entry_dir
                     .strip_prefix(&search_dir)
-                    .map_or(None, |x| Some(x))
+                    .map_or(None, |x| Some(PathBuf::from("").join(x)))
             } else {
                 None
             };
@@ -449,8 +446,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
     };
 
     // source and destination must exist and be canonicalizeable
-    let source_directory = &job.source_dir.canonicalize()?;
-    if !source_directory.exists() {
+    if !job.source_dir.is_dir() {
         log(
             LogType::Error,
             LOG_ACTION_JOB,

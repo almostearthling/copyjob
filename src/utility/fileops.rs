@@ -93,7 +93,7 @@ pub fn copy_file(
     let mut overwriting = false;
 
     // check source and destination metadata (and whether or not they exist)
-    match metadata(&source_path) {
+    match metadata(&source) {
         Ok(s_stat) => {
             // first check that source <> destination
             if source_path == destination_path {
@@ -157,7 +157,7 @@ pub fn copy_file(
                             if !create_directories {
                                 return Err(Error::new(Kind::Forbidden, FOERR_CANNOT_CREATE_DIR));
                             }
-                            if create_dir_all(&destination_dir).is_err() {
+                            if !dry_run && create_dir_all(&destination_dir).is_err() {
                                 return Err(Error::new(Kind::Forbidden, FOERR_CANNOT_CREATE_DIR));
                             }
                         }
@@ -201,7 +201,7 @@ pub fn remove_file(
     // normalize paths
     let destination_path = destination.canonicalize().unwrap_or_default();
 
-    match metadata(&destination_path) {
+    match metadata(&destination) {
         Ok(d_stat) => {
             // if we are here, then destination exists
             if d_stat.is_dir() {

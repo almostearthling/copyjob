@@ -66,7 +66,7 @@ pub fn code_to_str_readable(code: i64) -> &'static str {
         CJERR_DESTINATION_DIR_NOT_EXISTS => "destination directory does not exist",
         CJERR_SOURCE_DIR_NOT_EXISTS => "source directory does not exist",
         CJERR_NO_SOURCE_FILES => "no source files found",
-        CJERR_CANNOT_DETERMINE_DESTFILE => "cannot determine source",
+        CJERR_CANNOT_DETERMINE_DESTFILE => "cannot determine destination file",
         CJERR_HALT_ON_ERROR => "ending job after error",
         _ => "generic failure",
     }

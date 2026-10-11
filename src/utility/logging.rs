@@ -347,8 +347,12 @@ pub fn log(
             LOG_ACTION_JOB => {
                 format!(
                     "COPY_JOB: `{}` -> `{}`",
-                    source.unwrap().to_string_lossy(),
-                    destination.unwrap().to_string_lossy(),
+                    source
+                        .unwrap_or(PathBuf::from(STR_UNDEFINED_VALUE))
+                        .to_string_lossy(),
+                    destination
+                        .unwrap_or(PathBuf::from(STR_UNDEFINED_VALUE))
+                        .to_string_lossy(),
                 )
             }
             _ => {
