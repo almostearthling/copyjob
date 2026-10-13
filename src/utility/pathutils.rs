@@ -8,7 +8,8 @@ use std::path::{Path, PathBuf};
 use bstr::*;
 use lazy_static::lazy_static;
 
-use crate::utility::result::Result;
+use crate::constants::ERR_CODE_TOO_MANY_REPLACEMENTS;
+use crate::utility::result::{Error, Result};
 
 /// Character to use in formats to avoid clashes with file names: the
 /// star (`*`) character is the best candidate as it is never legal in
@@ -23,6 +24,11 @@ pub const UNIX_SEP: u8 = b'/';
 pub const WIN_SEP: u8 = b'\\';
 #[cfg(windows)]
 const WIN_DSLASH_ALLOW_UPTO: usize = 2;
+
+// iteration cap for circular variable references: they should not be allowed
+// but they are hard to spot, so for now we just put a limit on how many times
+// a locally defined variable can be used in a path
+const MAX_REPLACE_ITERATIONS: usize = 16;
 
 lazy_static! {
     // variable mention expressions: *_LOC is the mention of a variable
@@ -70,6 +76,7 @@ impl ReplaceVars for String {
         vars: &HashMap<String, String>,
     ) -> Result<Self> {
         let mut result = String::from(self);
+        let mut cap: usize = 0;
         // mimick shell by replacing undefined variables with the empty string:
         // since the same function is used for both local and environment vars,
         // this represents a difference with the Python version, that considered
@@ -80,7 +87,18 @@ impl ReplaceVars for String {
         while let Some(caps) = pattern.captures(result.as_str()) {
             let varname = caps.get(1).map_or("", |m| m.as_str());
             let occurrence = format.replace(FORMAT_SAFE_CHAR, varname);
-            result = result.replace(&occurrence, vars.get(varname).unwrap_or(&String::from("")));
+            if let Some(replacement) = vars.get(varname) {
+                result = result.replace(&occurrence, replacement);
+                cap += 1;
+                if cap > MAX_REPLACE_ITERATIONS {
+                    return Err(Error::new(
+                        super::result::Kind::Failed,
+                        ERR_CODE_TOO_MANY_REPLACEMENTS,
+                    ));
+                }
+            } else {
+                result = result.replace(&occurrence, &String::from(""));
+            }
         }
         Ok(result)
     }
@@ -115,6 +133,7 @@ impl ReplaceVars for OsString {
         vars: &HashMap<OsString, OsString>,
     ) -> Result<OsString> {
         let mut result = OsString::from(self);
+        let mut cap: usize = 0;
         // mimick shell by replacing undefined variables with the empty string:
         // since the same function is used for both local and environment vars,
         // this represents a difference with the Python version, that considered
@@ -139,6 +158,13 @@ impl ReplaceVars for OsString {
                     replacement.as_os_str().as_encoded_bytes(),
                 );
                 result = OsString::from(bs.to_os_str()?);
+                cap += 1;
+                if cap > MAX_REPLACE_ITERATIONS {
+                    return Err(Error::new(
+                        super::result::Kind::Failed,
+                        ERR_CODE_TOO_MANY_REPLACEMENTS,
+                    ));
+                }
             } else {
                 let bs = bs.replace(occurrence.as_bytes(), "".as_bytes());
                 result = OsString::from(bs.to_os_str()?);

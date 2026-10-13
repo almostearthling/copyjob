@@ -53,6 +53,7 @@ pub const ERR_CODE_OK: i64 = 0;
 pub const ERR_CODE_NONE: i64 = -1;
 pub const ERR_CODE_GENERIC: i64 = 9999;
 pub const ERR_CODE_INVALID_CONFIG_FILE: i64 = 9998;
+pub const ERR_CODE_TOO_MANY_REPLACEMENTS: i64 = 9997;
 
 // operation identifiers for output
 pub const LOG_ACTION_COPY: &str = "COPY";

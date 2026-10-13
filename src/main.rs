@@ -4,6 +4,7 @@
 
 use std::env;
 use std::fs;
+use std::path::Path;
 
 use lazy_static::lazy_static;
 
@@ -168,9 +169,11 @@ fn extract_config(
     cfg_check_keys(&config_map, &allowed_globals)?;
 
     // strings that will be used to build actual paths: the final join is
-    // to possibly add trailing slashes or backslashes
-    let var_user_home = home_dir().unwrap().join("");
-    let var_config_file_dir = PathBuf::from(config_file.clone().parent().unwrap()).join("");
+    // to possibly add trailing slashes or backslashes; both fallback to
+    // the current directory, this should be noticed in the documentation
+    let var_user_home = home_dir().unwrap_or(PathBuf::from(".")).join("");
+    let var_config_file_dir =
+        PathBuf::from(config_file.clone().parent().unwrap_or(Path::new("."))).join("");
 
     // here I should use WIN_SEP and UNIX_SEP, but I really don't
     // want to allocate even more and use an owned String
@@ -388,7 +391,7 @@ fn list_files_matching(
     #[cfg(windows)]
     let psre = format!("\\{}", WIN_SEP as char);
     #[cfg(unix)]
-    let psre = format!("\\{UNIX_SEP}" as char);
+    let psre = format!("\\{}", UNIX_SEP as char);
     let excludedir_match = RegexBuilder::new(format!("{psre}{excludedir_pattern}{psre}").as_str())
         .case_insensitive(!case_sensitive)
         .build()
@@ -645,7 +648,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             for item in &files_to_delete {
                 let rmfile_relative = if job.keep_structure {
                     PathBuf::from(&item)
-                        .strip_prefix(&job.source_dir)
+                        .strip_prefix(&job.destination_dir)
                         .expect("error stripping file prefix") // impossible: parent directory determines the file
                         .to_path_buf()
                 } else {
