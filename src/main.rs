@@ -388,44 +388,62 @@ fn list_files_matching(
     // of the excluded directory (this solution is working for now); since the
     // startup directory is already canonicalized we can use specific REs for
     // path separators on Windows and UNIX
-    #[cfg(windows)]
-    let psre = format!("\\{}", WIN_SEP as char);
-    #[cfg(unix)]
-    let psre = format!("\\{}", UNIX_SEP as char);
-    let excludedir_match = RegexBuilder::new(format!("{psre}{excludedir_pattern}{psre}").as_str())
+    // #[cfg(windows)]
+    // let psre = format!("\\{}", WIN_SEP as char);
+    // #[cfg(unix)]
+    // let psre = format!("\\{}", UNIX_SEP as char);
+    let excludedir_match = RegexBuilder::new(format!("^{excludedir_pattern}$").as_str())
         .case_insensitive(!case_sensitive)
         .build()
         .unwrap_or(RE_MATCH_NO_FILE.clone());
 
-    let depth: usize = if recursive { usize::MAX } else { 1 };
+    // let depth: usize = if recursive { usize::MAX } else { 1 };
     let mut result: Vec<PathBuf> = Vec::new();
 
+    // we exclude:
+    // - symlinked dirs if symlinks are not to be followed
+    // - directories that match the provided pattern
+    // - the toplevel directory
+    // TODO: the full result could probably be a filter_entry(...).filter_map()
+
     for entry in WalkDir::new(search_dir)
-        .max_depth(depth)
+        .max_depth(if recursive { usize::MAX } else { 1 })
         .follow_links(follow_symlinks)
         .into_iter()
+        .filter_entry(|e| {
+            !(e.path_is_symlink() && !follow_symlinks)
+                && (!e.depth() == 0
+                    || !e.file_type().is_dir()
+                    || excludedir_match.is_match(&e.file_name().to_string_lossy()))
+        })
         .filter_map(|e| e.ok())
     {
         // skip errors
-        if !(entry.file_type().is_dir() || (follow_symlinks && entry.file_type().is_symlink())) {
-            let mut entry_dir = PathBuf::from(entry.path());
-            let subdir_name = if entry_dir.pop() {
-                entry_dir
-                    .strip_prefix(&search_dir)
-                    .map_or(None, |x| Some(PathBuf::from("").join(x)))
-            } else {
-                None
-            };
+        // if !(entry.file_type().is_dir() || (follow_symlinks && entry.file_type().is_symlink())) {
+        //     let mut entry_dir = PathBuf::from(entry.path());
+        //     let subdir_name = if entry_dir.pop() {
+        //         entry_dir
+        //             .strip_prefix(&search_dir)
+        //             .map_or(None, |x| Some(PathBuf::from("").join(x)))
+        //     } else {
+        //         None
+        //     };
 
-            if let Some(subdir_name) = subdir_name
-                && !excludedir_match.is_match(&subdir_name.to_str().unwrap_or(""))
-                && let Some(file_name) = entry.path().file_name()
-                && include_match.is_match(file_name.to_str().unwrap_or(""))
-                && !exclude_match.is_match(file_name.to_str().unwrap_or(""))
-            {
-                result.push(PathBuf::from(entry.path()));
-            }
+        // if let Some(subdir_name) = subdir_name
+        //     && !excludedir_match.is_match(&subdir_name.to_str().unwrap_or(""))
+        //     && let Some(file_name) = entry.path().file_name()
+        //     && include_match.is_match(file_name.to_str().unwrap_or(""))
+        //     && !exclude_match.is_match(file_name.to_str().unwrap_or(""))
+
+        // here we match against lossy conversions, because invalid
+        // characters cannot be stored in regex patterns anyway
+        if let Some(file_name) = entry.path().file_name()
+            && include_match.is_match(&file_name.to_string_lossy())
+            && !exclude_match.is_match(&file_name.to_string_lossy())
+        {
+            result.push(PathBuf::from(entry.path()));
         }
+        // }
     }
     result
 }
