@@ -160,8 +160,12 @@ fn extract_config(
 
     let config_map = match toml::from_str(fs::read_to_string(config_file)?.as_str()) {
         Ok(toml_text) => CfgMap::from_toml(toml_text),
-        _ => {
-            return Err(Error::new(Kind::Invalid, ERR_CODE_INVALID_CONFIG_FILE));
+        Err(e) => {
+            return Err(Error::new_with_message(
+                Kind::Invalid,
+                ERR_CODE_INVALID_CONFIG_FILE,
+                &e.to_string(),
+            ));
         }
     };
 
