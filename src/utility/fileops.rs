@@ -4,7 +4,9 @@ use std::fs;
 use std::fs::File;
 use std::fs::create_dir_all;
 use std::fs::metadata;
+use std::fs::symlink_metadata;
 use std::path::{Path, PathBuf};
+use soft_canonicalize::soft_canonicalize;
 
 use data_encoding::HEXLOWER;
 use sha2::{Digest, Sha256};
@@ -81,13 +83,8 @@ pub fn copy_file(
     dry_run: bool,
 ) -> Result<Outcome> {
     // normalize paths
-    let source_path = source.canonicalize()?;
-    let destination_path = destination
-        .canonicalize()
-        .unwrap_or(PathBuf::from(&destination));
-    // NOTE: https://doc.rust-lang.org/nightly/std/fs/fn.canonicalize.html#errors
-    //       `canonicalize` returns an error if the target does not exist, thus
-    //       we either get the canonicalized path or the original path.
+    let source_path = soft_canonicalize(source)?;
+    let destination_path = soft_canonicalize(destination)?;
 
     // a flag that keeps track of whether we are overwriting or not
     let mut overwriting = false;
@@ -105,7 +102,7 @@ pub fn copy_file(
             if s_stat.is_symlink() && !follow_symlinks {
                 return Ok(Skipped(FOERR_SOURCE_IS_SYMLINK));
             }
-            match metadata(&destination_path) {
+            match symlink_metadata(&destination_path) {
                 Ok(d_stat) => {
                     // if we are here, then the destination exists: check
                     // whether overwrite is false, compare s_stat, d_stat and
@@ -199,9 +196,9 @@ pub fn remove_file(
     dry_run: bool,
 ) -> Result<Outcome> {
     // normalize paths
-    let destination_path = destination.canonicalize().unwrap_or_default();
+    let destination_path = soft_canonicalize(destination)?;
 
-    match metadata(&destination) {
+    match symlink_metadata(&destination) {
         Ok(d_stat) => {
             // if we are here, then destination exists
             if d_stat.is_dir() {

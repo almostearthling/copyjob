@@ -24,21 +24,21 @@ pub const ERR_INVALID_PARAMETER_LIST: &str = "invalid list or list element";
 pub const ERR_LOGGER_NOT_INITIALIZED: &str = "could not initialize logger";
 
 // values for Outcome::Error (copy_file, remove_file)
-pub const FOERR_GENERIC_FAILURE: i64 = 1001;
-pub const FOERR_DESTINATION_IS_ITSELF: i64 = 1011;
-pub const FOERR_DESTINATION_IS_DIR: i64 = 1012;
-pub const FOERR_DESTINATION_IS_SYMLINK: i64 = 1013;
-pub const FOERR_DESTINATION_IS_NEWER: i64 = 1014;
-pub const FOERR_DESTINATION_IS_IDENTICAL: i64 = 1015;
-pub const FOERR_DESTINATION_IS_READONLY: i64 = 1016;
-pub const FOERR_DESTINATION_EXISTS: i64 = 1021;
-pub const FOERR_DESTINATION_NOT_ACCESSIBLE: i64 = 1022;
-pub const FOERR_CANNOT_CREATE_DIR: i64 = 1031;
-pub const FOERR_CANNOT_CREATE_FILE: i64 = 1032;
-pub const FOERR_SOURCE_NOT_EXISTS: i64 = 1041;
-pub const FOERR_SOURCE_IS_DIR: i64 = 1042;
-pub const FOERR_SOURCE_IS_SYMLINK: i64 = 1043;
-pub const FOERR_SOURCE_NOT_ACCESSIBLE: i64 = 1044;
+pub const FOERR_GENERIC_FAILURE: i64 = 3001;
+pub const FOERR_DESTINATION_IS_ITSELF: i64 = 3011;
+pub const FOERR_DESTINATION_IS_DIR: i64 = 3012;
+pub const FOERR_DESTINATION_IS_SYMLINK: i64 = 3013;
+pub const FOERR_DESTINATION_IS_NEWER: i64 = 3014;
+pub const FOERR_DESTINATION_IS_IDENTICAL: i64 = 3015;
+pub const FOERR_DESTINATION_IS_READONLY: i64 = 3016;
+pub const FOERR_DESTINATION_EXISTS: i64 = 3021;
+pub const FOERR_DESTINATION_NOT_ACCESSIBLE: i64 = 3022;
+pub const FOERR_CANNOT_CREATE_DIR: i64 = 3031;
+pub const FOERR_CANNOT_CREATE_FILE: i64 = 3032;
+pub const FOERR_SOURCE_NOT_EXISTS: i64 = 3041;
+pub const FOERR_SOURCE_IS_DIR: i64 = 3042;
+pub const FOERR_SOURCE_IS_SYMLINK: i64 = 3043;
+pub const FOERR_SOURCE_NOT_ACCESSIBLE: i64 = 3044;
 
 // values for Outcome::Error (run_single_job, run_jobs)
 pub const CJERR_GENERIC_FAILURE: i64 = 2001;
@@ -54,6 +54,7 @@ pub const ERR_CODE_NONE: i64 = -1;
 pub const ERR_CODE_GENERIC: i64 = 9999;
 pub const ERR_CODE_INVALID_CONFIG_FILE: i64 = 9998;
 pub const ERR_CODE_TOO_MANY_REPLACEMENTS: i64 = 9997;
+pub const ERR_CODE_SOURCE_DEST_OVERLAP: i64 = 9996;
 
 // operation identifiers for output
 pub const LOG_ACTION_COPY: &str = "COPY";

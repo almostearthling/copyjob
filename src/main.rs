@@ -341,6 +341,13 @@ fn extract_config(
                         return Err(error_invalid_config("job_name"));
                     }
                     global_config.job_list.push(String::from(&job.job_name));
+
+                    // check for source and destination overlap
+                    if job.source_dir.starts_with(&job.destination_dir.join(""))
+                        || job.destination_dir.starts_with(&job.source_dir.join(""))
+                    {
+                        return Err(Error::new(Kind::Unsupported, ERR_CODE_SOURCE_DEST_OVERLAP));
+                    }
                     job_configs.push(job);
                 }
             }
