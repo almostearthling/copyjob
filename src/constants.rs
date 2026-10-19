@@ -18,6 +18,7 @@ pub const ERR_FAILED: &str = "failed";
 
 pub const ERR_INVALID_CONFIG: &str = "invalid configuration";
 pub const ERR_INVALID_CFG_ENTRY: &str = "invalid configuration entry";
+pub const ERR_INVALID_REGEX: &str = "invalid regular expression";
 pub const ERR_MISSING_PARAMETER: &str = "missing parameter";
 pub const ERR_INVALID_PARAMETER: &str = "invalid parameter";
 pub const ERR_INVALID_PARAMETER_LIST: &str = "invalid list or list element";

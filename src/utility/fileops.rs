@@ -1,12 +1,12 @@
 //! File operations: copy or delete a file
 
+use soft_canonicalize::soft_canonicalize;
 use std::fs;
 use std::fs::File;
 use std::fs::create_dir_all;
 use std::fs::metadata;
 use std::fs::symlink_metadata;
 use std::path::{Path, PathBuf};
-use soft_canonicalize::soft_canonicalize;
 
 use data_encoding::HEXLOWER;
 use sha2::{Digest, Sha256};
@@ -25,7 +25,7 @@ pub enum Outcome {
 }
 
 // impl Outcome {
-//     fn is_done(self) -> bool {
+//     fn is_done(&self) -> bool {
 //         match self {
 //             Done => { true },
 //             _ => { false }
@@ -63,14 +63,14 @@ fn sha256_digest(path: &Path) -> std::io::Result<String> {
 /// and contents of the destination file if it exists. A full description
 /// of the required parameters follows:
 ///
-///     source: the full specification of source file
-///     destination: the full specification of destination file
-///     overwrite: if false, never overwrite an existing destination
-///     skip_newer: if overwrite, only overwrite when source is newer
-///     check_content: if overwrite, only overwrite when contents differ
-///     follow_symlinks: follow symbolic links
-///     create_directories: create directory if it does not exist yet
-///     trash_on_overwrite: to send to garbage bin instead of overwriting
+/// - source: the full specification of source file
+/// - destination: the full specification of destination file
+/// - overwrite: if false, never overwrite an existing destination
+/// - skip_newer: if overwrite, only overwrite when source is newer
+/// - check_content: if overwrite, only overwrite when contents differ
+/// - follow_symlinks: follow symbolic links
+/// - create_directories: create directory if it does not exist yet
+/// - trash_on_overwrite: to send to garbage bin instead of overwriting
 pub fn copy_file(
     source: &Path,
     destination: &Path,

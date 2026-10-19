@@ -1,6 +1,10 @@
 [package]
 name = "copyjob"
-version = "0.6.1"
+description = "Perform complex file copy operations"
+readme = "README.md"
+version = "0.6.2"
+authors = ["Francesco Garosi <francesco.garosi@gmail.com>"]
+repository = "https://github.com/almostearthling/copyjob/"
 edition = "2024"
 
 [dependencies]
@@ -26,6 +30,5 @@ soft-canonicalize = { version = "0.5", features = ["dunce"] }
 
 [profile.release]
 strip = true        # strip executable
-opt-level = 2       # perform some optimizations
 lto = true
 panic = 'abort'     # remove garbage strings from executable

@@ -77,15 +77,16 @@ struct CopyJobGlobalConfig {
     dry_run: bool, // just write messages, don't actually perform jobs
 }
 
+// match no file or all files
+const STR_MATCH_NO_FILE: &str = r"^\*$";
+
 // Some constants used within the code
 lazy_static! {
     // directory markers: any of the values in respective lists, when
     // used in the source and destination directory specs, will expand
     // into the appropriate fully qualified path, namely:
-    //  USER-HOME => $HOME / %USERPROFILE%
-    //  CONFIG-FILE-DIR => where the current config file is located
-
-    static ref STR_MATCH_NO_FILE: String = String::from(r"^\*$");
+    // - USER-HOME => $HOME / %USERPROFILE%
+    // - CONFIG-FILE-DIR => where the current config file is located
 
     static ref RE_VARNAME: Regex = Regex::new(r"^[a-zA-Z_][a-zA-Z0-9_]*$").unwrap();
     static ref RE_JOBNAME: Regex = Regex::new(r"^[a-zA-Z_][a-zA-Z0-9_]*$").unwrap();
@@ -273,8 +274,8 @@ fn extract_config(
                         source_dir: PathBuf::new(),
                         destination_dir: PathBuf::new(),
                         include_pattern: String::new(),
-                        exclude_pattern: String::from(STR_MATCH_NO_FILE.as_str()),
-                        excludedir_pattern: String::from(STR_MATCH_NO_FILE.as_str()),
+                        exclude_pattern: String::from(STR_MATCH_NO_FILE),
+                        excludedir_pattern: String::from(STR_MATCH_NO_FILE),
                         recursive: global_config.recursive,
                         case_sensitive: global_config.case_sensitive,
                         follow_symlinks: global_config.follow_symlinks,
@@ -350,8 +351,41 @@ fn extract_config(
                     if job.source_dir.starts_with(&job.destination_dir.join(""))
                         || job.destination_dir.starts_with(&job.source_dir.join(""))
                     {
-                        return Err(Error::new(Kind::Unsupported, ERR_CODE_SOURCE_DEST_OVERLAP));
+                        return Err(Error::new_with_message(
+                            Kind::Unsupported,
+                            ERR_CODE_SOURCE_DEST_OVERLAP,
+                            &format!(
+                                "{}: `{}`, `{}`",
+                                code_to_str_readable(ERR_CODE_SOURCE_DEST_OVERLAP),
+                                &job.source_dir.to_string_lossy(),
+                                &job.destination_dir.to_string_lossy(),
+                            ),
+                        ));
                     }
+
+                    // check for correct regular expressions
+                    if Regex::new(&job.include_pattern).is_err() {
+                        return Err(Error::new_with_message(
+                            Kind::Failed,
+                            ERR_CODE_INVALID_CONFIG_FILE,
+                            &format!("{ERR_INVALID_REGEX}: `{}`", &job.include_pattern,),
+                        ));
+                    }
+                    if Regex::new(&job.exclude_pattern).is_err() {
+                        return Err(Error::new_with_message(
+                            Kind::Failed,
+                            ERR_CODE_INVALID_CONFIG_FILE,
+                            &format!("{ERR_INVALID_REGEX}: `{}`", &job.exclude_pattern,),
+                        ));
+                    }
+                    if Regex::new(&job.excludedir_pattern).is_err() {
+                        return Err(Error::new_with_message(
+                            Kind::Failed,
+                            ERR_CODE_INVALID_CONFIG_FILE,
+                            &format!("{ERR_INVALID_REGEX}: `{}`", &job.excludedir_pattern,),
+                        ));
+                    }
+
                     job_configs.push(job);
                 }
             }
@@ -384,40 +418,30 @@ fn list_files_matching(
     follow_symlinks: bool,
     case_sensitive: bool,
 ) -> Vec<PathBuf> {
-    // FIXME: for now erratic patterns only cause a no-match (acceptable?)
-    //        in the release version they should actually return None
+    // we know that regular expressions compile because they have been
+    // tested at compile time, thus we just unwrap here
     let include_match = RegexBuilder::new(format!("^{include_pattern}$").as_str())
         .case_insensitive(!case_sensitive)
         .build()
-        .unwrap_or(RE_MATCH_NO_FILE.clone());
+        .unwrap();
     let exclude_match = RegexBuilder::new(format!("^{exclude_pattern}$").as_str())
         .case_insensitive(!case_sensitive)
         .build()
-        .unwrap_or(RE_MATCH_NO_FILE.clone());
-
-    // excluded directory is not matched as ^$, to also ignore subdirectories
-    // of the excluded directory (this solution is working for now); since the
-    // startup directory is already canonicalized we can use specific REs for
-    // path separators on Windows and UNIX
-    // #[cfg(windows)]
-    // let psre = format!("\\{}", WIN_SEP as char);
-    // #[cfg(unix)]
-    // let psre = format!("\\{}", UNIX_SEP as char);
+        .unwrap();
     let excludedir_match = RegexBuilder::new(format!("^{excludedir_pattern}$").as_str())
         .case_insensitive(!case_sensitive)
         .build()
-        .unwrap_or(RE_MATCH_NO_FILE.clone());
-
-    // let depth: usize = if recursive { usize::MAX } else { 1 };
-    let mut result: Vec<PathBuf> = Vec::new();
+        .unwrap();
 
     // we exclude:
     // - symlinked dirs if symlinks are not to be followed
     // - directories that match the provided pattern
     // - the toplevel directory
-    // TODO: the full result could probably be a filter_entry(...).filter_map()
+    // - possible invalid entries
+    // - names that are excluded by RE or not included by RE
+    // but, honestly, is it really more readable than a cycle? :-)
 
-    for entry in WalkDir::new(search_dir)
+    WalkDir::new(search_dir)
         .max_depth(if recursive { usize::MAX } else { 1 })
         .follow_links(follow_symlinks)
         .into_iter()
@@ -428,35 +452,18 @@ fn list_files_matching(
                     || excludedir_match.is_match(&e.file_name().to_string_lossy()))
         })
         .filter_map(|e| e.ok())
-    {
-        // skip errors
-        // if !(entry.file_type().is_dir() || (follow_symlinks && entry.file_type().is_symlink())) {
-        //     let mut entry_dir = PathBuf::from(entry.path());
-        //     let subdir_name = if entry_dir.pop() {
-        //         entry_dir
-        //             .strip_prefix(&search_dir)
-        //             .map_or(None, |x| Some(PathBuf::from("").join(x)))
-        //     } else {
-        //         None
-        //     };
-
-        // if let Some(subdir_name) = subdir_name
-        //     && !excludedir_match.is_match(&subdir_name.to_str().unwrap_or(""))
-        //     && let Some(file_name) = entry.path().file_name()
-        //     && include_match.is_match(file_name.to_str().unwrap_or(""))
-        //     && !exclude_match.is_match(file_name.to_str().unwrap_or(""))
-
-        // here we match against lossy conversions, because invalid
-        // characters cannot be stored in regex patterns anyway
-        if let Some(file_name) = entry.path().file_name()
-            && include_match.is_match(&file_name.to_string_lossy())
-            && !exclude_match.is_match(&file_name.to_string_lossy())
-        {
-            result.push(PathBuf::from(entry.path()));
-        }
-        // }
-    }
-    result
+        .filter_map(|e| {
+            let p = e.path();
+            if let Some(name) = p.file_name()
+                && include_match.is_match(&name.to_string_lossy())
+                && !exclude_match.is_match(&name.to_string_lossy())
+            {
+                Some(p.to_path_buf())
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 /// Perform a single copy job, by building a list of files to copy and by
