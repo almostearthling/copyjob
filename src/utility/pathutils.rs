@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use bstr::*;
 use lazy_static::lazy_static;
 
-use crate::constants::ERR_CODE_TOO_MANY_REPLACEMENTS;
+use crate::constants::*;
 use crate::utility::result::{Error, Result};
 
 /// Character to use in formats to avoid clashes with file names: the
@@ -94,6 +94,7 @@ impl ReplaceVars for String {
                     return Err(Error::new(
                         super::result::Kind::Failed,
                         ERR_CODE_TOO_MANY_REPLACEMENTS,
+                        SHR_ERR_CODE_TOO_MANY_REPLACEMENTS,
                     ));
                 }
             } else {
@@ -163,6 +164,7 @@ impl ReplaceVars for OsString {
                     return Err(Error::new(
                         super::result::Kind::Failed,
                         ERR_CODE_TOO_MANY_REPLACEMENTS,
+                        SHR_ERR_CODE_TOO_MANY_REPLACEMENTS,
                     ));
                 }
             } else {

@@ -108,14 +108,10 @@ fn extract_config(
 
     // create a specific error
     fn error_invalid_config(key: &str) -> Error {
-        Error::new_with_message(
+        Error::new(
             Kind::Invalid,
             ERR_CODE_INVALID_CONFIG_FILE,
-            format!(
-                "{}:{key}",
-                code_to_str_parsable(ERR_CODE_INVALID_CONFIG_FILE)
-            )
-            .as_str(),
+            format!("{}:{key}", SHR_ERR_CODE_INVALID_CONFIG_FILE,).as_str(),
         )
     }
 
@@ -162,7 +158,7 @@ fn extract_config(
     let config_map = match toml::from_str(fs::read_to_string(config_file)?.as_str()) {
         Ok(toml_text) => CfgMap::from_toml(toml_text),
         Err(e) => {
-            return Err(Error::new_with_message(
+            return Err(Error::new(
                 Kind::Invalid,
                 ERR_CODE_INVALID_CONFIG_FILE,
                 &e.to_string(),
@@ -342,16 +338,11 @@ fn extract_config(
                     job.halt_on_errors =
                         cfg_bool(job_map, "halt_on_errors")?.unwrap_or(job.halt_on_errors);
 
-                    if job.job_name.is_empty() {
-                        return Err(error_invalid_config("job_name"));
-                    }
-                    global_config.job_list.push(String::from(&job.job_name));
-
                     // check for source and destination overlap
                     if job.source_dir.starts_with(&job.destination_dir.join(""))
                         || job.destination_dir.starts_with(&job.source_dir.join(""))
                     {
-                        return Err(Error::new_with_message(
+                        return Err(Error::new(
                             Kind::Unsupported,
                             ERR_CODE_SOURCE_DEST_OVERLAP,
                             &format!(
@@ -365,27 +356,30 @@ fn extract_config(
 
                     // check for correct regular expressions
                     if Regex::new(&job.include_pattern).is_err() {
-                        return Err(Error::new_with_message(
+                        return Err(Error::new(
                             Kind::Failed,
                             ERR_CODE_INVALID_CONFIG_FILE,
                             &format!("{ERR_INVALID_REGEX}: `{}`", &job.include_pattern,),
                         ));
                     }
                     if Regex::new(&job.exclude_pattern).is_err() {
-                        return Err(Error::new_with_message(
+                        return Err(Error::new(
                             Kind::Failed,
                             ERR_CODE_INVALID_CONFIG_FILE,
                             &format!("{ERR_INVALID_REGEX}: `{}`", &job.exclude_pattern,),
                         ));
                     }
                     if Regex::new(&job.excludedir_pattern).is_err() {
-                        return Err(Error::new_with_message(
+                        return Err(Error::new(
                             Kind::Failed,
                             ERR_CODE_INVALID_CONFIG_FILE,
                             &format!("{ERR_INVALID_REGEX}: `{}`", &job.excludedir_pattern,),
                         ));
                     }
 
+                    // name must be non empty: this is already checked by the
+                    // `cfg_mandatory!()` call and the associated Regex
+                    global_config.job_list.push(String::from(&job.job_name));
                     job_configs.push(job);
                 }
             }
@@ -445,13 +439,17 @@ fn list_files_matching(
         .max_depth(if recursive { usize::MAX } else { 1 })
         .follow_links(follow_symlinks)
         .into_iter()
+        // filter unwanted symlinks, dirs including toplevel, and
+        // directories whose names match the exluding patterns
         .filter_entry(|e| {
-            !(e.path_is_symlink() && !follow_symlinks)
-                && (!e.depth() == 0
+            (!e.path_is_symlink() || follow_symlinks)
+                && (e.depth() > 0
                     || !e.file_type().is_dir()
-                    || excludedir_match.is_match(&e.file_name().to_string_lossy()))
+                    || !excludedir_match.is_match(&e.file_name().to_string_lossy()))
         })
+        // only pick items that are not an error and...
         .filter_map(|e| e.ok())
+        // ...whose names match desired patterns, and not excluded ones
         .filter_map(|e| {
             let p = e.path();
             if let Some(name) = p.file_name()
@@ -496,7 +494,11 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             CJERR_SOURCE_DIR_NOT_EXISTS,
             None,
         );
-        return Err(Error::new(Kind::Unavailable, CJERR_SOURCE_DIR_NOT_EXISTS));
+        return Err(Error::new(
+            Kind::Unavailable,
+            CJERR_SOURCE_DIR_NOT_EXISTS,
+            SHR_CJERR_SOURCE_DIR_NOT_EXISTS,
+        ));
     }
     if !job.destination_dir.exists() && !job.create_directories {
         log(
@@ -512,6 +514,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
         return Err(Error::new(
             Kind::Unavailable,
             CJERR_DESTINATION_DIR_NOT_EXISTS,
+            SHR_CJERR_DESTINATION_DIR_NOT_EXISTS,
         ));
     }
 
@@ -641,7 +644,11 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                             Some(format!("{ERR_FAILED} ({err})")),
                         );
                         if job.halt_on_errors {
-                            return Err(Error::new(Kind::Failed, CJERR_HALT_ON_ERROR));
+                            return Err(Error::new(
+                                Kind::Failed,
+                                CJERR_HALT_ON_ERROR,
+                                SHR_CJERR_HALT_ON_ERROR,
+                            ));
                         };
                     }
                 };
@@ -665,7 +672,11 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                     None,
                 );
                 if job.halt_on_errors {
-                    return Err(Error::new(Kind::Failed, CJERR_HALT_ON_ERROR));
+                    return Err(Error::new(
+                        Kind::Failed,
+                        CJERR_HALT_ON_ERROR,
+                        SHR_CJERR_HALT_ON_ERROR,
+                    ));
                 }
             }
         }
@@ -738,7 +749,11 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                             Some(format!("{ERR_FAILED} ({err})")),
                         );
                         if job.halt_on_errors {
-                            return Err(Error::new(Kind::Failed, CJERR_HALT_ON_ERROR));
+                            return Err(Error::new(
+                                Kind::Failed,
+                                CJERR_HALT_ON_ERROR,
+                                SHR_CJERR_HALT_ON_ERROR,
+                            ));
                         };
                     }
                 }
@@ -758,7 +773,11 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             )),
         );
     } else {
-        return Err(Error::new(Kind::Unavailable, CJERR_NO_SOURCE_FILES));
+        return Err(Error::new(
+            Kind::Unavailable,
+            CJERR_NO_SOURCE_FILES,
+            SHR_CJERR_NO_SOURCE_FILES,
+        ));
     }
 
     Ok(())

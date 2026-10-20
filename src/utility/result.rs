@@ -215,16 +215,7 @@ impl From<()> for Error {
 impl Error {
     // this is used only to natively create an instance of `Error`: only
     // conversions set the `origin` property to something different
-    pub fn new(kind: Kind, code: i64) -> Self {
-        Self {
-            kind,
-            origin: Origin::Native,
-            code,
-            message: code_to_str_readable(code).to_string(),
-        }
-    }
-
-    pub fn new_with_message(kind: Kind, code: i64, message: &str) -> Self {
+    pub fn new(kind: Kind, code: i64, message: &str) -> Self {
         Self {
             kind,
             origin: Origin::Native,

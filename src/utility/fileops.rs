@@ -14,8 +14,6 @@ use std::io::BufReader;
 use std::io::Read;
 
 use crate::constants::*;
-use crate::utility::fileops::Outcome::Done;
-use crate::utility::fileops::Outcome::Skipped;
 use crate::utility::result::*;
 
 /// Reports whether or not a file operation has been carried out or not
@@ -94,13 +92,21 @@ pub fn copy_file(
         Ok(s_stat) => {
             // first check that source <> destination
             if source_path == destination_path {
-                return Err(Error::new(Kind::Invalid, FOERR_DESTINATION_IS_ITSELF));
+                return Err(Error::new(
+                    Kind::Invalid,
+                    FOERR_DESTINATION_IS_ITSELF,
+                    SHR_FOERR_DESTINATION_IS_ITSELF,
+                ));
             }
             if s_stat.is_dir() {
-                return Err(Error::new(Kind::Invalid, FOERR_SOURCE_IS_DIR));
+                return Err(Error::new(
+                    Kind::Invalid,
+                    FOERR_SOURCE_IS_DIR,
+                    SHR_FOERR_SOURCE_IS_DIR,
+                ));
             }
             if s_stat.is_symlink() && !follow_symlinks {
-                return Ok(Skipped(FOERR_SOURCE_IS_SYMLINK));
+                return Ok(Outcome::Skipped(FOERR_SOURCE_IS_SYMLINK));
             }
             match symlink_metadata(&destination_path) {
                 Ok(d_stat) => {
@@ -108,15 +114,19 @@ pub fn copy_file(
                     // whether overwrite is false, compare s_stat, d_stat and
                     // possibly hashes
                     if !overwrite {
-                        return Ok(Skipped(FOERR_DESTINATION_EXISTS));
+                        return Ok(Outcome::Skipped(FOERR_DESTINATION_EXISTS));
                     } else if d_stat.is_dir() {
-                        return Err(Error::new(Kind::Invalid, FOERR_DESTINATION_IS_DIR));
+                        return Err(Error::new(
+                            Kind::Invalid,
+                            FOERR_DESTINATION_IS_DIR,
+                            SHR_FOERR_DESTINATION_IS_DIR,
+                        ));
                     } else if d_stat.is_symlink() && !follow_symlinks {
-                        return Ok(Skipped(FOERR_DESTINATION_IS_SYMLINK));
+                        return Ok(Outcome::Skipped(FOERR_DESTINATION_IS_SYMLINK));
                     }
 
                     if skip_newer && s_stat.modified()? <= d_stat.modified()? {
-                        return Ok(Skipped(FOERR_DESTINATION_IS_NEWER));
+                        return Ok(Outcome::Skipped(FOERR_DESTINATION_IS_NEWER));
                     }
 
                     // only when asked perform content checking via SHA256
@@ -124,7 +134,7 @@ pub fn copy_file(
                     if check_content
                         && sha256_digest(&source_path)? == sha256_digest(&destination_path)?
                     {
-                        return Ok(Skipped(FOERR_DESTINATION_IS_IDENTICAL));
+                        return Ok(Outcome::Skipped(FOERR_DESTINATION_IS_IDENTICAL));
                     }
 
                     // if this point is reached we are actually overwriting
@@ -138,12 +148,20 @@ pub fn copy_file(
                     //       CANNOT_CREATE_DIR error is propagated
                     let mut destination_dir = PathBuf::from(&destination_path);
                     if !destination_dir.pop() {
-                        return Err(Error::new(Kind::Forbidden, FOERR_CANNOT_CREATE_DIR));
+                        return Err(Error::new(
+                            Kind::Forbidden,
+                            FOERR_CANNOT_CREATE_DIR,
+                            SHR_FOERR_CANNOT_CREATE_DIR,
+                        ));
                     }
                     match metadata(&destination_dir) {
                         Ok(d_dirdata) => {
                             if !d_dirdata.is_dir() {
-                                return Err(Error::new(Kind::Forbidden, FOERR_CANNOT_CREATE_DIR));
+                                return Err(Error::new(
+                                    Kind::Forbidden,
+                                    FOERR_CANNOT_CREATE_DIR,
+                                    SHR_FOERR_CANNOT_CREATE_DIR,
+                                ));
                             }
                         }
                         Err(_) => {
@@ -152,10 +170,18 @@ pub fn copy_file(
                             // out on directory creation errors; otherwise it
                             // is safe to go on without further checks
                             if !create_directories {
-                                return Err(Error::new(Kind::Forbidden, FOERR_CANNOT_CREATE_DIR));
+                                return Err(Error::new(
+                                    Kind::Forbidden,
+                                    FOERR_CANNOT_CREATE_DIR,
+                                    SHR_FOERR_CANNOT_CREATE_DIR,
+                                ));
                             }
                             if !dry_run && create_dir_all(&destination_dir).is_err() {
-                                return Err(Error::new(Kind::Forbidden, FOERR_CANNOT_CREATE_DIR));
+                                return Err(Error::new(
+                                    Kind::Forbidden,
+                                    FOERR_CANNOT_CREATE_DIR,
+                                    SHR_FOERR_CANNOT_CREATE_DIR,
+                                ));
                             }
                         }
                     }
@@ -172,19 +198,27 @@ pub fn copy_file(
 
                 // actually copy the file using OS API
                 fs::copy(&source_path, &destination_path)
-                    .map(|_| Done)
+                    .map(|_| Outcome::Done)
                     .map_err(|e| {
                         if e.kind() == std::io::ErrorKind::PermissionDenied {
-                            Error::new(Kind::Forbidden, FOERR_DESTINATION_IS_READONLY)
+                            Error::new(
+                                Kind::Forbidden,
+                                FOERR_DESTINATION_IS_READONLY,
+                                SHR_FOERR_DESTINATION_IS_READONLY,
+                            )
                         } else {
-                            Error::new_with_message(Kind::Unknown, ERR_CODE_GENERIC, &e.to_string())
+                            Error::new(Kind::Unknown, ERR_CODE_GENERIC, &e.to_string())
                         }
                     })
             } else {
-                Ok(Done)
+                Ok(Outcome::Done)
             }
         }
-        Err(_) => Err(Error::new(Kind::Unavailable, FOERR_SOURCE_NOT_ACCESSIBLE)),
+        Err(_) => Err(Error::new(
+            Kind::Unavailable,
+            FOERR_SOURCE_NOT_ACCESSIBLE,
+            SHR_FOERR_SOURCE_NOT_ACCESSIBLE,
+        )),
     }
 }
 
@@ -202,39 +236,43 @@ pub fn remove_file(
         Ok(d_stat) => {
             // if we are here, then destination exists
             if d_stat.is_dir() {
-                Err(Error::new(Kind::Invalid, FOERR_DESTINATION_IS_DIR))
+                Err(Error::new(
+                    Kind::Invalid,
+                    FOERR_DESTINATION_IS_DIR,
+                    SHR_FOERR_DESTINATION_IS_DIR,
+                ))
             } else if d_stat.is_symlink() && !follow_symlinks {
-                Ok(Skipped(FOERR_DESTINATION_IS_SYMLINK))
+                Ok(Outcome::Skipped(FOERR_DESTINATION_IS_SYMLINK))
             } else if trash_on_delete {
                 if !dry_run {
                     trash::delete(&destination_path)
                         .or_else(|_| fs::remove_file(destination_path))
-                        .map(|_| Done)
+                        .map(|_| Outcome::Done)
                         .map_err(|e| {
-                            Error::new_with_message(
+                            Error::new(
                                 Kind::Unavailable,
                                 FOERR_DESTINATION_NOT_ACCESSIBLE,
                                 &e.to_string(),
                             )
                         })
                 } else {
-                    Ok(Done)
+                    Ok(Outcome::Done)
                 }
             } else if !dry_run {
                 fs::remove_file(destination_path)
-                    .map(|_| Done)
+                    .map(|_| Outcome::Done)
                     .map_err(|e| {
-                        Error::new_with_message(
+                        Error::new(
                             Kind::Unavailable,
                             FOERR_DESTINATION_NOT_ACCESSIBLE,
                             &e.to_string(),
                         )
                     })
             } else {
-                Ok(Done)
+                Ok(Outcome::Done)
             }
         }
-        Err(e) => Err(Error::new_with_message(
+        Err(e) => Err(Error::new(
             Kind::Unavailable,
             FOERR_DESTINATION_NOT_ACCESSIBLE,
             &e.to_string(),
