@@ -852,7 +852,7 @@ fn main() -> std::io::Result<()> {
 
     // configure the logger
     let log_file_name = args.log;
-    exit_if_fails!(
+    let handle = exit_if_fails!(
         args.quiet,
         log_init(
             args.log_level,
@@ -917,6 +917,7 @@ fn main() -> std::io::Result<()> {
                 ERR_CODE_OK,
                 None,
             );
+            // handle.flush();
             Ok(())
         }
         Err(e) => {
@@ -927,6 +928,9 @@ fn main() -> std::io::Result<()> {
                 ERR_CODE_GENERIC,
                 Some(e.to_string()),
             );
+
+            // flush log to prevent output loss on shortcut exit
+            handle.flush();
             std::process::exit(2);
         }
     }

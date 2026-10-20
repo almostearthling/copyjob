@@ -40,7 +40,7 @@
 
 use crate::constants::*;
 use clap::ValueEnum;
-use flexi_logger::{DeferredNow, FileSpec, Logger, style};
+use flexi_logger::{DeferredNow, FileSpec, Logger, LoggerHandle, style};
 use log::Record;
 use log::{debug, error, info, trace, warn};
 use nu_ansi_term::Style;
@@ -195,7 +195,7 @@ pub fn init(
     logcolor: bool, // these three values are mutually
     logplain: bool, // exclusive by construction of the
     logjson: bool,  // main `clap` parser
-) -> std::io::Result<bool> {
+) -> std::io::Result<LoggerHandle> {
     let level = match level {
         LogType::Trace => "trace",
         LogType::Debug => "debug",
@@ -278,14 +278,15 @@ pub fn init(
             ));
         }
     }
-    if let Err(_e) = logger.unwrap().start() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            ERR_LOGGER_NOT_INITIALIZED,
-        ));
-    }
 
-    Ok(true)
+
+    logger.unwrap().start()
+        .map_err(|_|
+            std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                ERR_LOGGER_NOT_INITIALIZED,
+            )
+        )
 }
 
 /// Common log function. The parameters are granular in order to achieve
