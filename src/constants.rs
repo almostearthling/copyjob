@@ -64,7 +64,6 @@ pub const SMR_ERR_CODE_GENERIC: &str = "ERR_GENERIC";
 pub const SMR_ERR_CODE_INVALID_CONFIG_FILE: &str = "ERR_INVALID_CONFIG";
 pub const SMR_ERR_CODE_TOO_MANY_REPLACEMENTS: &str = "ERR_TOO_MANY_REPLACEMENTS";
 pub const SMR_ERR_CODE_SOURCE_DEST_OVERLAP: &str = "ERR_SOURCE_DEST_OVERLAP";
-pub const SMR_FOERR_GENERIC_FAILURE: &str = "FOERR_GENERIC_FAILURE";
 pub const SMR_FOERR_DESTINATION_IS_ITSELF: &str = "FOERR_DESTINATION_IS_ITSELF";
 pub const SMR_FOERR_DESTINATION_IS_DIR: &str = "FOERR_DESTINATION_IS_DIR";
 pub const SMR_FOERR_DESTINATION_IS_SYMLINK: &str = "FOERR_DESTINATION_IS_SYMLINK";
@@ -79,7 +78,6 @@ pub const SMR_FOERR_SOURCE_NOT_EXISTS: &str = "FOERR_SOURCE_NOT_EXISTS";
 pub const SMR_FOERR_SOURCE_IS_DIR: &str = "FOERR_SOURCE_IS_DIR";
 pub const SMR_FOERR_SOURCE_IS_SYMLINK: &str = "FOERR_SOURCE_IS_SYMLINK";
 pub const SMR_FOERR_SOURCE_NOT_ACCESSIBLE: &str = "FOERR_SOURCE_NOT_ACCESSIBLE";
-pub const SMR_CJERR_GENERIC_FAILURE: &str = "CJERR_GENERIC_FAILURE";
 pub const SMR_CJERR_DESTINATION_DIR_NOT_EXISTS: &str = "CJERR_DESTINATION_DIR_NOT_EXISTS";
 pub const SMR_CJERR_SOURCE_DIR_NOT_EXISTS: &str = "CJERR_SOURCE_DIR_NOT_EXISTS";
 pub const SMR_CJERR_NO_SOURCE_FILES: &str = "CJERR_NO_SOURCE_FILES";
@@ -93,7 +91,6 @@ pub const SHR_ERR_CODE_GENERIC: &str = "generic failure";
 pub const SHR_ERR_CODE_INVALID_CONFIG_FILE: &str = "invalid config file";
 pub const SHR_ERR_CODE_TOO_MANY_REPLACEMENTS: &str = "too many variable replacements";
 pub const SHR_ERR_CODE_SOURCE_DEST_OVERLAP: &str = "source and destination overlap";
-pub const SHR_FOERR_GENERIC_FAILURE: &str = "generic failure";
 pub const SHR_FOERR_DESTINATION_IS_ITSELF: &str = "failed attempt to copy on self";
 pub const SHR_FOERR_DESTINATION_IS_DIR: &str = "destination is a directory";
 pub const SHR_FOERR_DESTINATION_IS_SYMLINK: &str = "destination is a symbolic link";
@@ -108,7 +105,6 @@ pub const SHR_FOERR_SOURCE_NOT_EXISTS: &str = "source file does not exist";
 pub const SHR_FOERR_SOURCE_IS_DIR: &str = "source file is a directory";
 pub const SHR_FOERR_SOURCE_IS_SYMLINK: &str = "source file is a symbolic link";
 pub const SHR_FOERR_SOURCE_NOT_ACCESSIBLE: &str = "source file is not accessible";
-pub const SHR_CJERR_GENERIC_FAILURE: &str = "generic failure";
 pub const SHR_CJERR_DESTINATION_DIR_NOT_EXISTS: &str = "destination directory does not exist";
 pub const SHR_CJERR_SOURCE_DIR_NOT_EXISTS: &str = "source directory does not exist";
 pub const SHR_CJERR_NO_SOURCE_FILES: &str = "no source files found";
@@ -136,5 +132,10 @@ pub const LOG_STATUS_FAIL: &str = "FAIL";
 pub const LOG_STATUS_IND: &str = "IND";
 pub const LOG_STATUS_MSG: &str = "MSG";
 pub const LOG_STATUS_ERR: &str = "ERR";
+
+// file operation outcomes
+pub const OUTCOME_COPIED: &str = "copied";
+pub const OUTCOME_REMOVED: &str = "removed";
+pub const OUTCOME_SKIPPED: &str = "skipped";
 
 // end.

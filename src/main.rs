@@ -427,14 +427,6 @@ fn list_files_matching(
         .build()
         .unwrap();
 
-    // we exclude:
-    // - symlinked dirs if symlinks are not to be followed
-    // - directories that match the provided pattern
-    // - the toplevel directory
-    // - possible invalid entries
-    // - names that are excluded by RE or not included by RE
-    // but, honestly, is it really more readable than a cycle? :-)
-
     WalkDir::new(search_dir)
         .max_depth(if recursive { usize::MAX } else { 1 })
         .follow_links(follow_symlinks)
@@ -482,7 +474,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
         );
     };
 
-    // source and destination must exist and be canonicalizeable
+    // source must exist and also destination if not to be created
     if !job.source_dir.is_dir() {
         log(
             LogType::Error,
@@ -563,7 +555,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             let destination = PathBuf::from(&job.destination_dir);
             let srcfile_relative = PathBuf::from(&item)
                 .strip_prefix(&job.source_dir)
-                .expect("error stripping file prefix") // impossible: parent directory determines the file
+                .map_err(|e| Error::new(Kind::Unknown, ERR_CODE_GENERIC, &e.to_string()))?
                 .to_path_buf();
             let destfile_relative = if job.keep_structure {
                 srcfile_relative.clone()
@@ -608,7 +600,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                                 LOG_WHEN_PROC,
                                 LOG_STATUS_OK,
                                 ERR_CODE_OK,
-                                Some(format!("copied")),
+                                Some(OUTCOME_COPIED.to_string()),
                             );
                         }
                         Outcome::Skipped(code) => {
@@ -620,7 +612,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                                 LOG_WHEN_PROC,
                                 LOG_STATUS_OK,
                                 code,
-                                Some(format!("skipped")),
+                                Some(OUTCOME_SKIPPED.to_string()),
                             );
                         }
                     },
@@ -696,7 +688,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                 let rmfile_relative = if job.keep_structure {
                     PathBuf::from(&item)
                         .strip_prefix(&job.destination_dir)
-                        .expect("error stripping file prefix") // impossible: parent directory determines the file
+                        .map_err(|e| Error::new(Kind::Unknown, ERR_CODE_GENERIC, &e.to_string()))?
                         .to_path_buf()
                 } else {
                     PathBuf::from(&item.file_name().unwrap_or(OsStr::new(""))).to_path_buf()
@@ -713,7 +705,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                                 LOG_WHEN_PROC,
                                 LOG_STATUS_OK,
                                 ERR_CODE_OK,
-                                Some(format!("deleted")),
+                                Some(OUTCOME_REMOVED.to_string()),
                             );
                         }
                         Outcome::Skipped(code) => {
@@ -725,7 +717,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                                 LOG_WHEN_PROC,
                                 LOG_STATUS_OK,
                                 code,
-                                Some(format!("skipped")),
+                                Some(OUTCOME_SKIPPED.to_string()),
                             );
                         }
                     },
