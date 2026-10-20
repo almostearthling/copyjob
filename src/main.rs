@@ -347,7 +347,7 @@ fn extract_config(
                             ERR_CODE_SOURCE_DEST_OVERLAP,
                             &format!(
                                 "{}: `{}`, `{}`",
-                                code_to_str_readable(ERR_CODE_SOURCE_DEST_OVERLAP),
+                                SHR_ERR_CODE_SOURCE_DEST_OVERLAP,
                                 &job.source_dir.to_string_lossy(),
                                 &job.destination_dir.to_string_lossy(),
                             ),
