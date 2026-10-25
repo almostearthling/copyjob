@@ -11,7 +11,6 @@ use crate::constants::*;
 // types of specific errors: coming from another crate, all this variety might
 // be overkill
 // TODO: optimize after refactoring
-#[non_exhaustive]
 #[derive(Debug, Clone)]
 pub enum Kind {
     Forbidden,
@@ -51,7 +50,6 @@ impl fmt::Display for Kind {
 /// Describes the origin of the error: if `Native` the error was originated
 /// natively, otherwise the field is set by another error that is converted
 /// into `Error` via a dedicated `From` trait implementation.
-#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
 pub enum Origin {
     Native,

@@ -9,12 +9,14 @@ use bstr::*;
 use lazy_static::lazy_static;
 
 use crate::constants::*;
-use crate::utility::result::{Error, Result};
+use crate::utility::result::{Error, Kind, Result};
 
-/// Character to use in formats to avoid clashes with file names: the
-/// star (`*`) character is the best candidate as it is never legal in
-/// file names, being a wildcard
-pub const FORMAT_SAFE_CHAR: &str = "*";
+/// Character to use in formats to avoid clashes with variable names
+// Windows allows many characters that are disallowed in POSIX environment
+// variables so we choose the pipe `|` character that cannot be used for
+// this purpose (at least on the command line); this is also safe for local
+// variables which follow the POSIX convention
+pub const FORMAT_SAFE_CHAR: &str = "|";
 
 // separators kept as constants, as well as the index until which double
 // backslashes are allowed on Windows
@@ -37,18 +39,21 @@ lazy_static! {
     pub static ref RE_VARMENTION_LOC: Regex = Regex::new(r"[%]\{([a-zA-Z_][a-zA-Z0-9_]*)\}").unwrap();
     pub static ref RE_VARMENTION_ENV: Regex = Regex::new(r"[\$]\{([a-zA-Z_][a-zA-Z0-9_]*)\}").unwrap();
 
-    // these must have a star corresponding to the internal group of the
+    // these must have a pipe char corresponding to the internal group of the
     // corresponding RE_VARMENTION_* instance
     pub static ref FMT_VARMENTION_LOC: String = format!("%{{{FORMAT_SAFE_CHAR}}}");
     pub static ref FMT_VARMENTION_ENV: String = format!("${{{FORMAT_SAFE_CHAR}}}");
 }
 
-/// This makes variables and markers replacement easier
+/// This makes variables and markers replacement easier, also offering a
+/// check utility to test whether or not all variables mentioned in the string
+/// are defined in the substitution map.
 ///
-/// Note: it only works with strings (both standard ones and OS strings),
-/// which can be converted to `PathBuf`.
+/// Note: it only works with strings, both standard ones (when uncommented) and
+/// OS strings, which can be converted to `PathBuf`.
 pub trait ReplaceVars: Sized {
     fn replace_start(&self, vars: &HashMap<Self, Self>) -> Result<Self>;
+    fn check_vars(&self, pattern: &Regex, vars: &HashMap<Self, Self>) -> bool;
     fn replace_vars(
         &self,
         pattern: &Regex,
@@ -57,53 +62,58 @@ pub trait ReplaceVars: Sized {
     ) -> Result<Self>;
 }
 
-impl ReplaceVars for String {
-    fn replace_start(&self, vars: &HashMap<String, String>) -> Result<Self> {
-        let mut s = String::from(self);
-        for (k, v) in vars {
-            if s.starts_with(k) {
-                s = s.replacen(k, v, 1);
-                break;
-            }
-        }
-        Ok(s)
-    }
+// impl ReplaceVars for String {
+//     fn replace_start(&self, vars: &HashMap<String, String>) -> Result<Self> {
+//         let mut s = String::from(self);
+//         for (k, v) in vars {
+//             if s.starts_with(k) {
+//                 s = s.replacen(k, v, 1);
+//                 break;
+//             }
+//         }
+//         Ok(s)
+//     }
 
-    fn replace_vars(
-        &self,
-        pattern: &Regex,
-        format: &str,
-        vars: &HashMap<String, String>,
-    ) -> Result<Self> {
-        let mut result = String::from(self);
-        let mut cap: usize = 0;
-        // mimick shell by replacing undefined variables with the empty string:
-        // since the same function is used for both local and environment vars,
-        // this represents a difference with the Python version, that considered
-        // mentioning an undefined local variable a fatal error
-        // WARNING: this actually assumes that the regular expression pattern
-        //          "[%$]\{[a-zA-Z_][a-zA-Z0-9_]*\}" cannot appear in the source or
-        //          the destination directory within job definitions
-        while let Some(caps) = pattern.captures(result.as_str()) {
-            let varname = caps.get(1).map_or("", |m| m.as_str());
-            let occurrence = format.replace(FORMAT_SAFE_CHAR, varname);
-            if let Some(replacement) = vars.get(varname) {
-                result = result.replace(&occurrence, replacement);
-                cap += 1;
-                if cap > MAX_REPLACE_ITERATIONS {
-                    return Err(Error::new(
-                        super::result::Kind::Failed,
-                        ERR_CODE_TOO_MANY_REPLACEMENTS,
-                        SHR_ERR_CODE_TOO_MANY_REPLACEMENTS,
-                    ));
-                }
-            } else {
-                result = result.replace(&occurrence, &String::from(""));
-            }
-        }
-        Ok(result)
-    }
-}
+//     fn check_vars(&self, pattern: &Regex, vars: &HashMap<Self, Self>) -> bool {
+//         let s = self.as_str();
+//         pattern.captures_iter(s).all(|c| vars.contains_key(&c[1]))
+//     }
+
+//     fn replace_vars(
+//         &self,
+//         pattern: &Regex,
+//         format: &str,
+//         vars: &HashMap<String, String>,
+//     ) -> Result<Self> {
+//         let mut result = String::from(self);
+//         let mut cap: usize = 0;
+//         // mimick shell by replacing undefined variables with the empty string:
+//         // since the same function is used for both local and environment vars,
+//         // this represents a difference with the Python version, that considered
+//         // mentioning an undefined local variable a fatal error
+//         // WARNING: this actually assumes that the regular expression pattern
+//         //          "[%$]\{[a-zA-Z_][a-zA-Z0-9_]*\}" cannot appear in the source or
+//         //          the destination directory within job definitions
+//         while let Some(caps) = pattern.captures(result.as_str()) {
+//             let varname = caps.get(1).map_or("", |m| m.as_str());
+//             let occurrence = format.replace(FORMAT_SAFE_CHAR, varname);
+//             if let Some(replacement) = vars.get(varname) {
+//                 result = result.replace(&occurrence, replacement);
+//                 cap += 1;
+//                 if cap > MAX_REPLACE_ITERATIONS {
+//                     return Err(Error::new(
+//                         super::result::Kind::Failed,
+//                         ERR_CODE_TOO_MANY_REPLACEMENTS,
+//                         SHR_ERR_CODE_TOO_MANY_REPLACEMENTS,
+//                     ));
+//                 }
+//             } else {
+//                 result = result.replace(&occurrence, &String::from(""));
+//             }
+//         }
+//         Ok(result)
+//     }
+// }
 
 impl ReplaceVars for OsString {
     fn replace_start(&self, vars: &HashMap<OsString, OsString>) -> Result<OsString> {
@@ -125,6 +135,13 @@ impl ReplaceVars for OsString {
             }
         }
         Ok(s)
+    }
+
+    fn check_vars(&self, pattern: &Regex, vars: &HashMap<Self, Self>) -> bool {
+        let s = self.to_string_lossy();
+        pattern
+            .captures_iter(&s)
+            .all(|c| vars.contains_key(&OsString::from(&c[1])))
     }
 
     fn replace_vars(
@@ -247,36 +264,68 @@ pub fn interpolate_dir(
     local_vars: &HashMap<OsString, OsString>,
     sys_vars: &HashMap<OsString, OsString>,
 ) -> Result<PathBuf> {
-    Ok(PathBuf::from({
-        // note that we first replace the variables that have been defined in
-        // the configuration files, which can contain themselves start markers
-        // and therefore we replace markers just after that; markers in the
-        // environment variables are ignored, because if present they are not
-        // supposed to be aware of copyjob
-        OsString::from(raw)
-            .replace_vars(
-                &RE_VARMENTION_LOC,
-                &FMT_VARMENTION_LOC,
-                &local_vars
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect(),
-            )?
-            .replace_start(
-                &markers
-                    .iter()
-                    .map(|(k, v)| (OsString::from(*k), v.as_os_str().to_owned()))
-                    .collect(),
-            )?
-            .replace_vars(
-                &RE_VARMENTION_ENV,
-                &FMT_VARMENTION_ENV,
-                &sys_vars
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect(),
-            )?
-    }))
+    // check that all mentioned local variables are defined: while it can be
+    // considered idiomatic that the environment variables evaluate to the
+    // empty string (and it is not safe, but at least expected), variables
+    // defined in the configuration file should be treated more strictly
+    if !OsString::from(raw).check_vars(&RE_VARMENTION_LOC, local_vars) {
+        Err(Error::new(
+            Kind::Unavailable,
+            ERR_CODE_LOCAL_VAR_UNDEFINED,
+            SHR_ERR_CODE_LOCAL_VAR_UNDEFINED,
+        ))
+    } else {
+        Ok(PathBuf::from({
+            // note that we first replace the variables that have been defined in
+            // the configuration files, which can contain themselves start markers
+            // and therefore we replace markers just after that; markers in the
+            // environment variables are ignored, because if present they are not
+            // supposed to be aware of copyjob
+            OsString::from(raw)
+                .replace_vars(
+                    &RE_VARMENTION_LOC,
+                    &FMT_VARMENTION_LOC,
+                    &local_vars
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect(),
+                )?
+                .replace_start(
+                    &markers
+                        .iter()
+                        .map(|(k, v)| (OsString::from(*k), v.as_os_str().to_owned()))
+                        .collect(),
+                )?
+                .replace_vars(
+                    &RE_VARMENTION_ENV,
+                    &FMT_VARMENTION_ENV,
+                    &sys_vars
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect(),
+                )?
+        }))
+    }
 }
+
+/// check a predicate on the last part of a path, usually the file name
+pub fn check_filename_for<F>(path: &Path, predicate: F) -> bool
+where
+    F: Fn(&OsStr) -> bool,
+{
+    path.file_name().is_some_and(predicate)
+}
+
+// /// check a predicate on the first part of a path, usually the directory
+// pub fn check_dirnames_for<F>(path: &Path, predicate: F) -> bool
+// where
+//     F: Fn(&OsStr) -> bool,
+// {
+//     // we only check parts, no matter where we begin, therefore the check can
+//     // be performed on the reversed list of path elements; moreover this also
+//     // more coherent, as shallower components have probably already been
+//     // checked if this function is used in a directory walk
+//     path.iter().rev().skip(1).any(|x| predicate(x))
+// }
 
 // end.

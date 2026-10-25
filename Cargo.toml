@@ -8,9 +8,7 @@ repository = "https://github.com/almostearthling/copyjob/"
 edition = "2024"
 
 [dependencies]
-time = "0.3"
 regex = "1.7"
-fs_extra = "1.2"
 trash = "5.2"
 dirs = "7.0"
 sha2 = "0.11"
@@ -25,7 +23,6 @@ clap = { version = "4.1", features = ["derive"] }
 log = "0.4"
 flexi_logger = "0.31"
 nu-ansi-term = "0.50"
-parking_lot = "0.12"
 soft-canonicalize = { version = "0.5", features = ["dunce"] }
 
 [profile.release]

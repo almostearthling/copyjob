@@ -1,10 +1,10 @@
 // this utility may contain unused functions or other items
 #![allow(dead_code)]
 
-/// module cfghelp
-///
-/// module providing shortcut functions/macros to help configuration of items
-/// by providing a CfgMap instance and the key to be retrieved
+//! module cfghelp
+//!
+//! module providing shortcut functions/macros to help configuration of items
+//! by providing a CfgMap instance and the key to be retrieved
 use cfgmap::{CfgMap, CfgValue};
 use regex::Regex;
 
@@ -24,8 +24,8 @@ macro_rules! cfg_mandatory {
         } else {
             Err($crate::utility::cfghelp::cfg_err_invalid_config(
                 $key,
-                STR_UNKNOWN_VALUE,
-                ERR_MISSING_PARAMETER,
+                $crate::constants::STR_UNKNOWN_VALUE,
+                $crate::constants::ERR_MISSING_PARAMETER,
             ))
         }
     };
@@ -35,8 +35,8 @@ macro_rules! cfg_mandatory {
         } else {
             Err($crate::utility::cfghelp::cfg_err_invalid_config(
                 $key,
-                STR_UNKNOWN_VALUE,
-                ERR_MISSING_PARAMETER,
+                $crate::constants::STR_UNKNOWN_VALUE,
+                $crate::constants::ERR_MISSING_PARAMETER,
             ))
         }
     };
@@ -46,8 +46,8 @@ macro_rules! cfg_mandatory {
         } else {
             Err($crate::utility::cfghelp::cfg_err_invalid_config(
                 $key,
-                STR_UNKNOWN_VALUE,
-                ERR_MISSING_PARAMETER,
+                $crate::constants::STR_UNKNOWN_VALUE,
+                $crate::constants::ERR_MISSING_PARAMETER,
             ))
         }
     };

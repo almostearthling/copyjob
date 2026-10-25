@@ -18,11 +18,15 @@ pub const ERR_FAILED: &str = "failed";
 
 pub const ERR_INVALID_CONFIG: &str = "invalid configuration";
 pub const ERR_INVALID_CFG_ENTRY: &str = "invalid configuration entry";
+pub const ERR_INVALID_VARNAME: &str = "invalid variable name";
 pub const ERR_INVALID_REGEX: &str = "invalid regular expression";
 pub const ERR_MISSING_PARAMETER: &str = "missing parameter";
 pub const ERR_INVALID_PARAMETER: &str = "invalid parameter";
 pub const ERR_INVALID_PARAMETER_LIST: &str = "invalid list or list element";
+pub const ERR_DUPLICATE_JOB_NAME: &str = "duplicate job name";
 pub const ERR_LOGGER_NOT_INITIALIZED: &str = "could not initialize logger";
+pub const ERR_SOME_JOBS_FAILED: &str = "one or more jobs did not succeed";
+pub const ERR_RESULTING_DIR_EMPTY: &str = "resulting directory is empty";
 
 // values for errors in copy_file, remove_file
 pub const FOERR_GENERIC_FAILURE: i64 = 3001;
@@ -56,6 +60,7 @@ pub const ERR_CODE_GENERIC: i64 = 9999;
 pub const ERR_CODE_INVALID_CONFIG_FILE: i64 = 9998;
 pub const ERR_CODE_TOO_MANY_REPLACEMENTS: i64 = 9997;
 pub const ERR_CODE_SOURCE_DEST_OVERLAP: i64 = 9996;
+pub const ERR_CODE_LOCAL_VAR_UNDEFINED: i64 = 9995;
 
 // machine readable codes
 pub const SMR_ERR_CODE_OK: &str = "OK";
@@ -64,6 +69,7 @@ pub const SMR_ERR_CODE_GENERIC: &str = "ERR_GENERIC";
 pub const SMR_ERR_CODE_INVALID_CONFIG_FILE: &str = "ERR_INVALID_CONFIG";
 pub const SMR_ERR_CODE_TOO_MANY_REPLACEMENTS: &str = "ERR_TOO_MANY_REPLACEMENTS";
 pub const SMR_ERR_CODE_SOURCE_DEST_OVERLAP: &str = "ERR_SOURCE_DEST_OVERLAP";
+pub const SMR_ERR_CODE_LOCAL_VAR_UNDEFINED: &str = "ERR_LOCAL_VAR_UNDEFINED";
 pub const SMR_FOERR_DESTINATION_IS_ITSELF: &str = "FOERR_DESTINATION_IS_ITSELF";
 pub const SMR_FOERR_DESTINATION_IS_DIR: &str = "FOERR_DESTINATION_IS_DIR";
 pub const SMR_FOERR_DESTINATION_IS_SYMLINK: &str = "FOERR_DESTINATION_IS_SYMLINK";
@@ -91,6 +97,7 @@ pub const SHR_ERR_CODE_GENERIC: &str = "generic failure";
 pub const SHR_ERR_CODE_INVALID_CONFIG_FILE: &str = "invalid config file";
 pub const SHR_ERR_CODE_TOO_MANY_REPLACEMENTS: &str = "too many variable replacements";
 pub const SHR_ERR_CODE_SOURCE_DEST_OVERLAP: &str = "source and destination overlap";
+pub const SHR_ERR_CODE_LOCAL_VAR_UNDEFINED: &str = "local variable used but not defined";
 pub const SHR_FOERR_DESTINATION_IS_ITSELF: &str = "failed attempt to copy on self";
 pub const SHR_FOERR_DESTINATION_IS_DIR: &str = "destination is a directory";
 pub const SHR_FOERR_DESTINATION_IS_SYMLINK: &str = "destination is a symbolic link";

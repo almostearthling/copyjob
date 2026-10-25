@@ -1,12 +1,13 @@
 //! File operations: copy or delete a file
 
-use soft_canonicalize::soft_canonicalize;
 use std::fs;
 use std::fs::File;
 use std::fs::create_dir_all;
 use std::fs::metadata;
 use std::fs::symlink_metadata;
 use std::path::{Path, PathBuf};
+
+use soft_canonicalize::soft_canonicalize;
 
 use data_encoding::HEXLOWER;
 use sha2::{Digest, Sha256};
@@ -16,7 +17,8 @@ use std::io::Read;
 use crate::constants::*;
 use crate::utility::result::*;
 
-/// Reports whether or not a file operation has been carried out or not
+/// reports whether or not a file operation has been carried out or not
+#[derive(Debug, PartialEq, Eq)]
 pub enum Outcome {
     Done,
     Skipped(i64),
@@ -80,9 +82,31 @@ pub fn copy_file(
     trash_on_overwrite: bool,
     dry_run: bool,
 ) -> Result<Outcome> {
-    // normalize paths
-    let source_path = soft_canonicalize(source)?;
-    let destination_path = soft_canonicalize(destination)?;
+    // first check that there is something to copy
+    if !source.exists() {
+        return Err(Error::new(
+            Kind::Invalid,
+            FOERR_SOURCE_NOT_EXISTS,
+            SHR_FOERR_SOURCE_NOT_EXISTS,
+        ));
+    }
+    if source.is_symlink() && !follow_symlinks {
+        return Ok(Outcome::Skipped(FOERR_SOURCE_IS_SYMLINK));
+    }
+    if source.is_dir() {
+        return Err(Error::new(
+            Kind::Invalid,
+            FOERR_SOURCE_IS_DIR,
+            SHR_FOERR_SOURCE_IS_DIR,
+        ));
+    }
+    if !source.is_file() {
+        return Err(Error::new(
+            Kind::Invalid,
+            FOERR_SOURCE_NOT_ACCESSIBLE,
+            SHR_FOERR_SOURCE_NOT_ACCESSIBLE,
+        ));
+    }
 
     // a flag that keeps track of whether we are overwriting or not
     let mut overwriting = false;
@@ -91,24 +115,14 @@ pub fn copy_file(
     match metadata(&source) {
         Ok(s_stat) => {
             // first check that source <> destination
-            if source_path == destination_path {
+            if soft_canonicalize(source)? == soft_canonicalize(destination)? {
                 return Err(Error::new(
                     Kind::Invalid,
                     FOERR_DESTINATION_IS_ITSELF,
                     SHR_FOERR_DESTINATION_IS_ITSELF,
                 ));
             }
-            if s_stat.is_dir() {
-                return Err(Error::new(
-                    Kind::Invalid,
-                    FOERR_SOURCE_IS_DIR,
-                    SHR_FOERR_SOURCE_IS_DIR,
-                ));
-            }
-            if s_stat.is_symlink() && !follow_symlinks {
-                return Ok(Outcome::Skipped(FOERR_SOURCE_IS_SYMLINK));
-            }
-            match symlink_metadata(&destination_path) {
+            match symlink_metadata(&destination) {
                 Ok(d_stat) => {
                     // if we are here, then the destination exists: check
                     // whether overwrite is false, compare s_stat, d_stat and
@@ -131,9 +145,7 @@ pub fn copy_file(
 
                     // only when asked perform content checking via SHA256
                     // and skip copy if the contents are the same
-                    if check_content
-                        && sha256_digest(&source_path)? == sha256_digest(&destination_path)?
-                    {
+                    if check_content && sha256_digest(&source)? == sha256_digest(&destination)? {
                         return Ok(Outcome::Skipped(FOERR_DESTINATION_IS_IDENTICAL));
                     }
 
@@ -146,7 +158,7 @@ pub fn copy_file(
                     // to do so
                     // TODO: double check this part!!! If destdir is found a
                     //       CANNOT_CREATE_DIR error is propagated
-                    let mut destination_dir = PathBuf::from(&destination_path);
+                    let mut destination_dir = PathBuf::from(&destination);
                     if !destination_dir.pop() {
                         return Err(Error::new(
                             Kind::Forbidden,
@@ -193,11 +205,12 @@ pub fn copy_file(
                 // and if we are actually overwriting the destination file with
                 // no opposing condition (file age, contents, accessibility, etc)
                 if overwriting && trash_on_overwrite {
-                    let _ = trash::delete(&destination_path);
+                    trash::delete(&destination)
+                        .map_err(|e| Error::new(Kind::Failed, ERR_CODE_GENERIC, &e.to_string()))?;
                 }
 
                 // actually copy the file using OS API
-                fs::copy(&source_path, &destination_path)
+                fs::copy(&source, &destination)
                     .map(|_| Outcome::Done)
                     .map_err(|e| {
                         if e.kind() == std::io::ErrorKind::PermissionDenied {
@@ -207,7 +220,11 @@ pub fn copy_file(
                                 SHR_FOERR_DESTINATION_IS_READONLY,
                             )
                         } else {
-                            Error::new(Kind::Unknown, ERR_CODE_GENERIC, &e.to_string())
+                            Error::new(
+                                Kind::Unknown,
+                                FOERR_DESTINATION_NOT_ACCESSIBLE,
+                                &e.to_string(),
+                            )
                         }
                     })
             } else {
@@ -222,16 +239,13 @@ pub fn copy_file(
     }
 }
 
-/// Attempt to remove a specified file if it exists and if allowed to.
+/// attempt to remove a specified file if it exists and if allowed to
 pub fn remove_file(
     destination: &Path,
     follow_symlinks: bool,
     trash_on_delete: bool,
     dry_run: bool,
 ) -> Result<Outcome> {
-    // normalize paths
-    let destination_path = soft_canonicalize(destination)?;
-
     match symlink_metadata(&destination) {
         Ok(d_stat) => {
             // if we are here, then destination exists
@@ -245,12 +259,11 @@ pub fn remove_file(
                 Ok(Outcome::Skipped(FOERR_DESTINATION_IS_SYMLINK))
             } else if trash_on_delete {
                 if !dry_run {
-                    trash::delete(&destination_path)
-                        .or_else(|_| fs::remove_file(destination_path))
+                    trash::delete(&destination)
                         .map(|_| Outcome::Done)
                         .map_err(|e| {
                             Error::new(
-                                Kind::Unavailable,
+                                Kind::Failed,
                                 FOERR_DESTINATION_NOT_ACCESSIBLE,
                                 &e.to_string(),
                             )
@@ -259,7 +272,7 @@ pub fn remove_file(
                     Ok(Outcome::Done)
                 }
             } else if !dry_run {
-                fs::remove_file(destination_path)
+                fs::remove_file(destination)
                     .map(|_| Outcome::Done)
                     .map_err(|e| {
                         Error::new(

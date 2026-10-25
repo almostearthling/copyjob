@@ -72,13 +72,11 @@ struct CopyJobGlobalConfig {
     trash_on_delete: bool,    // use garbage bin instead of deleting
     trash_on_overwrite: bool, // send to garbage bin before overwrite
     halt_on_errors: bool,     // exit job if an error occurs
-
-    // the following parameters are defined through CLI arguments only
-    dry_run: bool, // just write messages, don't actually perform jobs
 }
 
-// match no file or all files
-const STR_MATCH_NO_FILE: &str = r"^\*$";
+// match no file: a regexp that only matches the empty string will not match
+// any actual file or directory name
+const PATTERN_MATCH_NO_FILE: &str = r"^$";
 
 // Some constants used within the code
 lazy_static! {
@@ -90,7 +88,6 @@ lazy_static! {
 
     static ref RE_VARNAME: Regex = Regex::new(r"^[a-zA-Z_][a-zA-Z0-9_]*$").unwrap();
     static ref RE_JOBNAME: Regex = Regex::new(r"^[a-zA-Z_][a-zA-Z0-9_]*$").unwrap();
-    static ref RE_MATCH_NO_FILE: Regex = Regex::new(&STR_MATCH_NO_FILE).unwrap();
 }
 
 // helper to convert a list of regexp patterns into a single ORed regexp
@@ -100,10 +97,7 @@ fn combine_regexp_patterns(res: &[String]) -> String {
 
 /// Extract the configuration from a TOML file, given the file name and the
 /// pertaining arguments as resulting from the command line.
-fn extract_config(
-    config_file: &PathBuf,
-    dry_run: bool,
-) -> Result<(CopyJobGlobalConfig, Vec<CopyJobConfig>)> {
+fn extract_config(config_file: &PathBuf) -> Result<(CopyJobGlobalConfig, Vec<CopyJobConfig>)> {
     // local helpers:
 
     // create a specific error
@@ -113,6 +107,15 @@ fn extract_config(
             ERR_CODE_INVALID_CONFIG_FILE,
             format!("{}:{key}", SHR_ERR_CODE_INVALID_CONFIG_FILE,).as_str(),
         )
+    }
+
+    // check that a path is not empty
+    fn check_empty_path(p: &Path) -> Result<&Path> {
+        if p.is_empty() {
+            Err(Error::new(Kind::Empty, ERR_CODE_GENERIC, ERR_RESULTING_DIR_EMPTY))
+        } else {
+            Ok(p)
+        }
     }
 
     // here we also set default values
@@ -132,9 +135,6 @@ fn extract_config(
         trash_on_delete: true,
         trash_on_overwrite: false,
         halt_on_errors: false,
-
-        // the following parameters are defined through CLI arguments only
-        dry_run,
     };
     let mut job_configs: Vec<CopyJobConfig> = Vec::new();
     let allowed_globals = vec![
@@ -153,6 +153,26 @@ fn extract_config(
         "trash_on_overwrite",
         "halt_on_errors",
         "job",
+    ];
+    let allowed_job = vec![
+        "name",
+        "source",
+        "destination",
+        "patterns_include",
+        "patterns_exclude",
+        "patterns_exclude_dir",
+        "recursive",
+        "case_sensitive",
+        "follow_symlinks",
+        "overwrite",
+        "skip_newer",
+        "check_content",
+        "remove_others_matching",
+        "create_directories",
+        "keep_structure",
+        "trash_on_delete",
+        "trash_on_overwrite",
+        "halt_on_errors",
     ];
 
     let config_map = match toml::from_str(fs::read_to_string(config_file)?.as_str()) {
@@ -174,7 +194,7 @@ fn extract_config(
     // the current directory, this should be noticed in the documentation
     let var_user_home = home_dir().unwrap_or(PathBuf::from(".")).join("");
     let var_config_file_dir =
-        PathBuf::from(config_file.clone().parent().unwrap_or(Path::new("."))).join("");
+        PathBuf::from(config_file.parent().unwrap_or(Path::new("."))).join("");
 
     // here I should use WIN_SEP and UNIX_SEP, but I really don't
     // want to allocate even more and use an owned String
@@ -187,8 +207,8 @@ fn extract_config(
     }
 
     let mut sys_variables: HashMap<OsString, OsString> = HashMap::new();
-    for (var, value) in env::vars_os() {
-        sys_variables.insert(var.clone(), value.clone());
+    for (var, value) in env::vars_os().into_iter() {
+        sys_variables.insert(var, value);
     }
 
     // collect globals:
@@ -210,7 +230,15 @@ fn extract_config(
             return Err(error_invalid_config(cur_key));
         } else {
             for (key, item) in c.as_map().unwrap().iter() {
-                if !item.is_str() {
+                if !RE_VARNAME.is_match(key) {
+                    return Err(error_invalid_config(&format!(
+                        "{ERR_INVALID_VARNAME}: `{key}`"
+                    )));
+                }
+                // reject non-strings and strings that mention other local
+                // variables to avoid circular references.
+                // TODO: this must be documented
+                if !item.is_str() || RE_VARMENTION_LOC.find(item.as_str().unwrap()).is_some() {
                     return Err(error_invalid_config(cur_key));
                 }
                 global_config.variables.insert(
@@ -265,13 +293,15 @@ fn extract_config(
                 if !job_entry.is_map() {
                     return Err(error_invalid_config(cur_key));
                 } else {
+                    let job_map = job_entry.as_map().unwrap();
+                    cfg_check_keys(job_map, &allowed_job)?;
                     let mut job = CopyJobConfig {
                         job_name: String::new(),
                         source_dir: PathBuf::new(),
                         destination_dir: PathBuf::new(),
                         include_pattern: String::new(),
-                        exclude_pattern: String::from(STR_MATCH_NO_FILE),
-                        excludedir_pattern: String::from(STR_MATCH_NO_FILE),
+                        exclude_pattern: String::from(PATTERN_MATCH_NO_FILE),
+                        excludedir_pattern: String::from(PATTERN_MATCH_NO_FILE),
                         recursive: global_config.recursive,
                         case_sensitive: global_config.case_sensitive,
                         follow_symlinks: global_config.follow_symlinks,
@@ -285,36 +315,51 @@ fn extract_config(
                         trash_on_overwrite: global_config.trash_on_overwrite,
                         halt_on_errors: global_config.halt_on_errors,
                     };
-                    let job_map = job_entry.as_map().unwrap();
                     job.job_name =
                         cfg_mandatory!(cfg_string_check_regex(job_map, "name", &RE_JOBNAME))?
                             .unwrap();
+                    // check that the name is not already used
+                    if global_config.job_list.contains(&job.job_name) {
+                        return Err(Error::new(
+                            Kind::Invalid,
+                            ERR_CODE_INVALID_CONFIG_FILE,
+                            &format!("{ERR_DUPLICATE_JOB_NAME}: {}", job.job_name),
+                        ));
+                    }
                     job.source_dir = normalize_path_slashes(
-                        interpolate_dir(
+                        check_empty_path(interpolate_dir(
                             &(cfg_mandatory!(cfg_string(job_map, "source"))?.unwrap()),
                             &markers,
                             &global_config.variables,
                             &sys_variables,
                         )?
-                        .as_path(),
+                        .as_path())?,
                         true,
                     );
                     job.destination_dir = normalize_path_slashes(
-                        interpolate_dir(
+                        check_empty_path(interpolate_dir(
                             &(cfg_mandatory!(cfg_string(job_map, "destination"))?.unwrap()),
                             &markers,
                             &global_config.variables,
                             &sys_variables,
                         )?
-                        .as_path(),
+                        .as_path())?,
                         true,
                     );
                     job.include_pattern = combine_regexp_patterns(
-                        &cfg_mandatory!(cfg_vec_string(job_map, "patterns_include"))?.unwrap(),
+                        &cfg_mandatory!(cfg_vec_string_check(job_map, "patterns_include", |p| {
+                            Regex::new(p).is_ok()
+                        }))?
+                        .unwrap(),
                     );
-                    job.exclude_pattern = cfg_vec_string(job_map, "patterns_exclude")?
-                        .map_or(job.exclude_pattern, |v| combine_regexp_patterns(&v));
-                    job.excludedir_pattern = cfg_vec_string(job_map, "patterns_exclude_dir")?
+                    job.exclude_pattern = cfg_vec_string_check(job_map, "patterns_exclude", |p| {
+                        Regex::new(p).is_ok()
+                    })?
+                    .map_or(job.exclude_pattern, |v| combine_regexp_patterns(&v));
+                    job.excludedir_pattern =
+                        cfg_vec_string_check(job_map, "patterns_exclude_dir", |p| {
+                            Regex::new(p).is_ok()
+                        })?
                         .map_or(job.excludedir_pattern, |v| combine_regexp_patterns(&v));
                     job.recursive = cfg_bool(job_map, "recursive")?.unwrap_or(job.recursive);
                     job.case_sensitive =
@@ -339,9 +384,9 @@ fn extract_config(
                         cfg_bool(job_map, "halt_on_errors")?.unwrap_or(job.halt_on_errors);
 
                     // check for source and destination overlap
-                    if job.source_dir.starts_with(&job.destination_dir.join(""))
-                        || job.destination_dir.starts_with(&job.source_dir.join(""))
-                    {
+                    let csrc = soft_canonicalize(&job.source_dir)?;
+                    let cdest = soft_canonicalize(&job.destination_dir)?;
+                    if csrc.starts_with(&cdest) || cdest.starts_with(csrc) {
                         return Err(Error::new(
                             Kind::Unsupported,
                             ERR_CODE_SOURCE_DEST_OVERLAP,
@@ -379,7 +424,7 @@ fn extract_config(
 
                     // name must be non empty: this is already checked by the
                     // `cfg_mandatory!()` call and the associated Regex
-                    global_config.job_list.push(String::from(&job.job_name));
+                    global_config.job_list.push(job.job_name.clone());
                     job_configs.push(job);
                 }
             }
@@ -389,7 +434,7 @@ fn extract_config(
 
     // check that all active jobs that have been listed are actually defined
     let cur_key = "active_jobs";
-    for item in global_config.active_jobs.clone() {
+    for item in global_config.active_jobs.iter() {
         if !global_config.job_list.contains(&item) {
             return Err(error_invalid_config(cur_key));
         }
@@ -404,7 +449,7 @@ fn extract_config(
 ///
 /// NOTE: skip errors code, see: https://github.com/BurntSushi/walkdir/blob/master/README.md
 fn list_files_matching(
-    search_dir: &PathBuf,
+    search_dir: &Path,
     include_pattern: &str,
     exclude_pattern: &str,
     excludedir_pattern: &str,
@@ -412,8 +457,6 @@ fn list_files_matching(
     follow_symlinks: bool,
     case_sensitive: bool,
 ) -> Vec<PathBuf> {
-    // we know that regular expressions compile because they have been
-    // tested at compile time, thus we just unwrap here
     let include_match = RegexBuilder::new(format!("^{include_pattern}$").as_str())
         .case_insensitive(!case_sensitive)
         .build()
@@ -431,28 +474,24 @@ fn list_files_matching(
         .max_depth(if recursive { usize::MAX } else { 1 })
         .follow_links(follow_symlinks)
         .into_iter()
-        // filter unwanted symlinks, dirs including toplevel, and
-        // directories whose names match the exluding patterns
+        // directories only: never prune the root, prune excluded subdirectories
         .filter_entry(|e| {
-            (!e.path_is_symlink() || follow_symlinks)
-                && (e.depth() > 0
+            (follow_symlinks || !e.path_is_symlink())
+                && (e.depth() == 0
                     || !e.file_type().is_dir()
                     || !excludedir_match.is_match(&e.file_name().to_string_lossy()))
         })
-        // only pick items that are not an error and...
+        // only pick items that are not an error
         .filter_map(|e| e.ok())
-        // ...whose names match desired patterns, and not excluded ones
-        .filter_map(|e| {
-            let p = e.path();
-            if let Some(name) = p.file_name()
-                && include_match.is_match(&name.to_string_lossy())
-                && !exclude_match.is_match(&name.to_string_lossy())
-            {
-                Some(p.to_path_buf())
-            } else {
-                None
-            }
+        // files only: apply the name patterns
+        .filter(|e| {
+            e.file_type().is_file()
+                && check_filename_for(e.path(), |n| {
+                    let n = n.to_string_lossy();
+                    include_match.is_match(&n) && !exclude_match.is_match(&n)
+                })
         })
+        .map(|x| x.into_path())
         .collect()
 }
 
@@ -492,7 +531,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             SHR_CJERR_SOURCE_DIR_NOT_EXISTS,
         ));
     }
-    if !job.destination_dir.exists() && !job.create_directories {
+    if !job.destination_dir.is_dir() && !job.create_directories {
         log(
             LogType::Error,
             LOG_ACTION_JOB,
@@ -555,7 +594,19 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             let destination = PathBuf::from(&job.destination_dir);
             let srcfile_relative = PathBuf::from(&item)
                 .strip_prefix(&job.source_dir)
-                .map_err(|e| Error::new(Kind::Unknown, ERR_CODE_GENERIC, &e.to_string()))?
+                .map_err(|e| {
+                    log(
+                        LogType::Error,
+                        LOG_ACTION_COPY,
+                        Some(item.clone()),
+                        Some(destination.clone()),
+                        LOG_WHEN_PROC,
+                        LOG_STATUS_ERR,
+                        CJERR_CANNOT_DETERMINE_DESTFILE,
+                        None,
+                    );
+                    Error::new(Kind::Unknown, ERR_CODE_GENERIC, &e.to_string())
+                })?
                 .to_path_buf();
             let destfile_relative = if job.keep_structure {
                 srcfile_relative.clone()
@@ -664,6 +715,16 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                     None,
                 );
                 if job.halt_on_errors {
+                    log(
+                        LogType::Error,
+                        LOG_ACTION_COPY,
+                        Some(srcfile_relative.clone()),
+                        Some(destfile_relative.clone()),
+                        LOG_WHEN_END,
+                        LOG_STATUS_ERR,
+                        CJERR_HALT_ON_ERROR,
+                        Some(format!("{ERR_FAILED} ({SHR_CJERR_HALT_ON_ERROR})")),
+                    );
                     return Err(Error::new(
                         Kind::Failed,
                         CJERR_HALT_ON_ERROR,
@@ -679,7 +740,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                 LOG_ACTION_JOB,
                 Some(job.source_dir.clone()),
                 Some(job.destination_dir.clone()),
-                LOG_WHEN_START,
+                LOG_WHEN_PROC,
                 LOG_STATUS_MSG,
                 ERR_CODE_NONE,
                 Some(format!("deleting {} files", files_to_delete.len())),
@@ -741,6 +802,16 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                             Some(format!("{ERR_FAILED} ({err})")),
                         );
                         if job.halt_on_errors {
+                            log(
+                                LogType::Error,
+                                LOG_ACTION_DEL,
+                                None,
+                                Some(rmfile_relative.clone()),
+                                LOG_WHEN_END,
+                                LOG_STATUS_ERR,
+                                err.code(),
+                                Some(format!("{ERR_FAILED} ({err})")),
+                            );
                             return Err(Error::new(
                                 Kind::Failed,
                                 CJERR_HALT_ON_ERROR,
@@ -760,11 +831,20 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             LOG_STATUS_OK,
             ERR_CODE_OK,
             Some(format!(
-                "copied {} files, deleted {} files",
-                num_files_copied, num_files_deleted,
+                "copied {num_files_copied} files, deleted {num_files_deleted} files"
             )),
         );
     } else {
+        log(
+            LogType::Error,
+            LOG_ACTION_JOB,
+            Some(job.source_dir.clone()),
+            Some(job.destination_dir.clone()),
+            LOG_WHEN_END,
+            LOG_STATUS_FAIL,
+            CJERR_NO_SOURCE_FILES,
+            Some(SHR_CJERR_NO_SOURCE_FILES.to_string()),
+        );
         return Err(Error::new(
             Kind::Unavailable,
             CJERR_NO_SOURCE_FILES,
@@ -893,46 +973,52 @@ fn main() -> std::io::Result<()> {
             ERR_CODE_NONE,
             None,
         );
-        let using = soft_canonicalize(using).unwrap_or_default(); // will result in a config error anyway
-        extract_config(&using, args.dry_run)
+        let using = soft_canonicalize(&using).unwrap_or(using);
+        extract_config(&using)
     });
 
-    // run all configured and active jobs, and halt on errors
-    let mut res = Ok(());
-    for job in jobs {
-        if global.active_jobs.contains(&job.job_name) {
-            res = run_job(&job, global.dry_run);
-            if res.is_err() {
+    // run all configured and active jobs, and halt on errors if instructed to
+    let mut failed = false;
+    for job in jobs
+        .iter()
+        .filter(|j| global.active_jobs.contains(&j.job_name))
+    {
+        if run_job(job, args.dry_run).is_err() {
+            failed = true;
+            // log(
+            //     LogType::Error,
+            //     LOG_WHEN_PROC,
+            //     LOG_STATUS_FAIL,
+            //     e.code(),
+            //     Some(e.to_string()),
+            // );
+            if global.halt_on_errors {
                 break;
             }
         }
     }
 
-    match res {
-        Ok(()) => {
-            log(
-                LogType::Debug,
-                LOG_WHEN_END,
-                LOG_STATUS_OK,
-                ERR_CODE_OK,
-                None,
-            );
-            // handle.flush();
-            Ok(())
-        }
-        Err(e) => {
-            log(
-                LogType::Error,
-                LOG_WHEN_END,
-                LOG_STATUS_FAIL,
-                ERR_CODE_GENERIC,
-                Some(e.to_string()),
-            );
-
-            // flush log to prevent output loss on shortcut exit
-            handle.flush();
-            std::process::exit(2);
-        }
+    if failed {
+        log(
+            LogType::Error,
+            LOG_WHEN_END,
+            LOG_STATUS_FAIL,
+            ERR_CODE_GENERIC,
+            Some(ERR_SOME_JOBS_FAILED.to_string()),
+        );
+        // flush log to prevent output loss on shortcut exit
+        handle.flush();
+        std::process::exit(2);
+    } else {
+        log(
+            LogType::Debug,
+            LOG_WHEN_END,
+            LOG_STATUS_OK,
+            ERR_CODE_OK,
+            None,
+        );
+        // handle.flush();
+        Ok(())
     }
 }
 

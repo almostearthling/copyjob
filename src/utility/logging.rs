@@ -35,7 +35,7 @@
 //! * _ERR_ for actual errors
 //!
 //! This should help using the log as a way of communicating to a wrapper
-//! utility the state of the scheduler, and possibily give the opportunity to
+//! utility the state of the run, and possibily give the opportunity to
 //! organize communication to the user in a friendlier way.
 
 use crate::constants::*;
@@ -115,6 +115,7 @@ fn code_to_str_parsable(code: i64) -> &'static str {
         ERR_CODE_INVALID_CONFIG_FILE => SMR_ERR_CODE_INVALID_CONFIG_FILE,
         ERR_CODE_TOO_MANY_REPLACEMENTS => SMR_ERR_CODE_TOO_MANY_REPLACEMENTS,
         ERR_CODE_SOURCE_DEST_OVERLAP => SMR_ERR_CODE_SOURCE_DEST_OVERLAP,
+        ERR_CODE_LOCAL_VAR_UNDEFINED => SMR_ERR_CODE_LOCAL_VAR_UNDEFINED,
         FOERR_GENERIC_FAILURE => SMR_ERR_CODE_GENERIC,
         FOERR_DESTINATION_IS_ITSELF => SMR_FOERR_DESTINATION_IS_ITSELF,
         FOERR_DESTINATION_IS_DIR => SMR_FOERR_DESTINATION_IS_DIR,
@@ -149,6 +150,7 @@ fn code_to_str_readable(code: i64) -> &'static str {
         ERR_CODE_INVALID_CONFIG_FILE => SHR_ERR_CODE_INVALID_CONFIG_FILE,
         ERR_CODE_TOO_MANY_REPLACEMENTS => SHR_ERR_CODE_TOO_MANY_REPLACEMENTS,
         ERR_CODE_SOURCE_DEST_OVERLAP => SHR_ERR_CODE_SOURCE_DEST_OVERLAP,
+        ERR_CODE_LOCAL_VAR_UNDEFINED => SHR_ERR_CODE_LOCAL_VAR_UNDEFINED,
         FOERR_GENERIC_FAILURE => SHR_ERR_CODE_GENERIC,
         FOERR_DESTINATION_IS_ITSELF => SHR_FOERR_DESTINATION_IS_ITSELF,
         FOERR_DESTINATION_IS_DIR => SHR_FOERR_DESTINATION_IS_DIR,
@@ -304,8 +306,9 @@ pub fn init(
 ///
 /// while non-constant parameters must be defined as follows
 ///
-/// * `item` can be a tuple consisting of item _name_ and _id_
-/// * `message` is the only arbitrary string that can be passed
+/// * `item` is the name of a job if any
+/// * `message_code` is an error code (0 for no error)
+/// * `message_extra` is an arbitrary string
 ///
 /// This allows JSON messages to be easily interpretable by a wrapper
 /// according to the hints given in the documentation.
