@@ -152,50 +152,62 @@ pub fn copy_file(
                     // if this point is reached we are actually overwriting
                     overwriting = true;
                 }
-                Err(_) => {
-                    // in case of error check whether or not the destination
-                    // directory exists, and if not create it when instructed
-                    // to do so
-                    // TODO: double check this part!!! If destdir is found a
-                    //       CANNOT_CREATE_DIR error is propagated
-                    let mut destination_dir = PathBuf::from(&destination);
-                    if !destination_dir.pop() {
+                Err(e) => {
+                    if e.kind() == std::io::ErrorKind::NotFound {
+                        // in case of error check whether or not the destination
+                        // directory exists, and if not create it when instructed
+                        // to do so
+                        // TODO: double check this part!!! If destdir is found a
+                        //       CANNOT_CREATE_DIR error is propagated
+                        let mut destination_dir = PathBuf::from(&destination);
+                        if !destination_dir.pop() {
+                            return Err(Error::new(
+                                Kind::Forbidden,
+                                FOERR_CANNOT_CREATE_DIR,
+                                SHR_FOERR_CANNOT_CREATE_DIR,
+                            ));
+                        }
+                        match metadata(&destination_dir) {
+                            Ok(d_dirdata) => {
+                                if !d_dirdata.is_dir() {
+                                    return Err(Error::new(
+                                        Kind::Forbidden,
+                                        FOERR_CANNOT_CREATE_DIR,
+                                        SHR_FOERR_CANNOT_CREATE_DIR,
+                                    ));
+                                }
+                            }
+                            Err(e) => {
+                                // if the destination directory is not present and
+                                // missing directories are to be created, only bail
+                                // out on directory creation errors; otherwise it
+                                // is safe to go on without further checks
+                                if e.kind() == std::io::ErrorKind::NotFound {
+                                    if !create_directories {
+                                        return Err(Error::new(
+                                            Kind::Forbidden,
+                                            FOERR_CANNOT_CREATE_DIR,
+                                            SHR_FOERR_CANNOT_CREATE_DIR,
+                                        ));
+                                    }
+                                    if !dry_run && create_dir_all(&destination_dir).is_err() {
+                                        return Err(Error::new(
+                                            Kind::Forbidden,
+                                            FOERR_CANNOT_CREATE_DIR,
+                                            SHR_FOERR_CANNOT_CREATE_DIR,
+                                        ));
+                                    }
+                                } else {
+                                    return Err(Error::from(e));
+                                }
+                            }
+                        }
+                    } else {
                         return Err(Error::new(
-                            Kind::Forbidden,
-                            FOERR_CANNOT_CREATE_DIR,
-                            SHR_FOERR_CANNOT_CREATE_DIR,
+                            Kind::Unavailable,
+                            FOERR_DESTINATION_NOT_ACCESSIBLE,
+                            &e.to_string(),
                         ));
-                    }
-                    match metadata(&destination_dir) {
-                        Ok(d_dirdata) => {
-                            if !d_dirdata.is_dir() {
-                                return Err(Error::new(
-                                    Kind::Forbidden,
-                                    FOERR_CANNOT_CREATE_DIR,
-                                    SHR_FOERR_CANNOT_CREATE_DIR,
-                                ));
-                            }
-                        }
-                        Err(_) => {
-                            // if the destination directory is not present and
-                            // missing directories are to be created, only bail
-                            // out on directory creation errors; otherwise it
-                            // is safe to go on without further checks
-                            if !create_directories {
-                                return Err(Error::new(
-                                    Kind::Forbidden,
-                                    FOERR_CANNOT_CREATE_DIR,
-                                    SHR_FOERR_CANNOT_CREATE_DIR,
-                                ));
-                            }
-                            if !dry_run && create_dir_all(&destination_dir).is_err() {
-                                return Err(Error::new(
-                                    Kind::Forbidden,
-                                    FOERR_CANNOT_CREATE_DIR,
-                                    SHR_FOERR_CANNOT_CREATE_DIR,
-                                ));
-                            }
-                        }
                     }
                 }
             }
@@ -216,8 +228,8 @@ pub fn copy_file(
                         if e.kind() == std::io::ErrorKind::PermissionDenied {
                             Error::new(
                                 Kind::Forbidden,
-                                FOERR_DESTINATION_IS_READONLY,
-                                SHR_FOERR_DESTINATION_IS_READONLY,
+                                FOERR_CANNOT_WRITE_DESTINATION,
+                                SHR_FOERR_CANNOT_WRITE_DESTINATION,
                             )
                         } else {
                             Error::new(

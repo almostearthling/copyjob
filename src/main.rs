@@ -109,10 +109,14 @@ fn extract_config(config_file: &PathBuf) -> Result<(CopyJobGlobalConfig, Vec<Cop
         )
     }
 
-    // check that a path is not empty
-    fn check_empty_path(p: &Path) -> Result<&Path> {
-        if p.is_empty() {
-            Err(Error::new(Kind::Empty, ERR_CODE_GENERIC, ERR_RESULTING_DIR_EMPTY))
+    // check that a path is not empty or root
+    fn check_empty_pathname(p: &Path) -> Result<&Path> {
+        if p.as_os_str().is_empty() || p.parent().is_none() {
+            Err(Error::new(
+                Kind::Empty,
+                ERR_CODE_INVALID_CONFIG_FILE,
+                ERR_RESULTING_DIR_EMPTY,
+            ))
         } else {
             Ok(p)
         }
@@ -327,23 +331,41 @@ fn extract_config(config_file: &PathBuf) -> Result<(CopyJobGlobalConfig, Vec<Cop
                         ));
                     }
                     job.source_dir = normalize_path_slashes(
-                        check_empty_path(interpolate_dir(
-                            &(cfg_mandatory!(cfg_string(job_map, "source"))?.unwrap()),
-                            &markers,
-                            &global_config.variables,
-                            &sys_variables,
-                        )?
-                        .as_path())?,
+                        check_empty_pathname(
+                            interpolate_dir(
+                                &(cfg_mandatory!(cfg_string(job_map, "source"))?.unwrap()),
+                                &markers,
+                                &global_config.variables,
+                                &sys_variables,
+                            )?
+                            .as_path(),
+                        )
+                        .map_err(|e| {
+                            Error::new(
+                                e.kind().clone(),
+                                e.code(),
+                                &format!("{}: `source` in job `{}`", e.message(), job.job_name),
+                            )
+                        })?,
                         true,
                     );
                     job.destination_dir = normalize_path_slashes(
-                        check_empty_path(interpolate_dir(
-                            &(cfg_mandatory!(cfg_string(job_map, "destination"))?.unwrap()),
-                            &markers,
-                            &global_config.variables,
-                            &sys_variables,
-                        )?
-                        .as_path())?,
+                        check_empty_pathname(
+                            interpolate_dir(
+                                &(cfg_mandatory!(cfg_string(job_map, "destination"))?.unwrap()),
+                                &markers,
+                                &global_config.variables,
+                                &sys_variables,
+                            )?
+                            .as_path(),
+                        )
+                        .map_err(|e| {
+                            Error::new(
+                                e.kind().clone(),
+                                e.code(),
+                                &format!("{}: `destination` in job `{}`", e.message(), job.job_name),
+                            )
+                        })?,
                         true,
                     );
                     job.include_pattern = combine_regexp_patterns(
@@ -513,6 +535,18 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
         );
     };
 
+    // when we delete files we must take care of case insensitive filesystems
+    // (including macos, which is generally case insensitive)
+    #[cfg(any(windows, target_os = "macos"))]
+    fn cmp_fname(p: &Path) -> OsString {
+        p.as_os_str().to_ascii_lowercase()
+    }
+
+    #[cfg(not(any(windows, target_os = "macos")))]
+    fn cmp_fname(p: &Path) -> OsString {
+        p.as_os_str().to_owned()
+    }
+
     // source must exist and also destination if not to be created
     if !job.source_dir.is_dir() {
         log(
@@ -529,6 +563,23 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             Kind::Unavailable,
             CJERR_SOURCE_DIR_NOT_EXISTS,
             SHR_CJERR_SOURCE_DIR_NOT_EXISTS,
+        ));
+    }
+    if job.destination_dir.exists() && !job.destination_dir.is_dir() {
+        log(
+            LogType::Error,
+            LOG_ACTION_JOB,
+            None,
+            Some(job.destination_dir.clone()),
+            LOG_WHEN_START,
+            LOG_STATUS_ERR,
+            CJERR_DESTINATION_NOT_DIR,
+            None,
+        );
+        return Err(Error::new(
+            Kind::Unavailable,
+            CJERR_DESTINATION_NOT_DIR,
+            SHR_CJERR_DESTINATION_NOT_DIR,
         ));
     }
     if !job.destination_dir.is_dir() && !job.create_directories {
@@ -563,12 +614,19 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
         let mut num_files_copied: usize = 0;
         let mut num_files_deleted: usize = 0;
         let mut files_to_delete = if job.remove_others_matching {
+            // the `job.recursive && job.keep_structure` flag is because,
+            // when the destination is flattened, we only want to remove
+            // corresponding destination files at the top level: this has
+            // no influences on subsequent runs wit the same parameters with
+            // a destination folder that only has been handled by copyjob,
+            // but might save a subtree that has been left in the destination
+            // for any reason, and contains matching files
             list_files_matching(
                 &job.destination_dir,
                 &job.include_pattern,
                 &job.exclude_pattern,
                 &job.excludedir_pattern,
-                job.recursive,
+                job.recursive && job.keep_structure,
                 job.follow_symlinks,
                 job.case_sensitive,
             )
@@ -605,7 +663,11 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                         CJERR_CANNOT_DETERMINE_DESTFILE,
                         None,
                     );
-                    Error::new(Kind::Unknown, ERR_CODE_GENERIC, &e.to_string())
+                    Error::new(
+                        Kind::Unknown,
+                        CJERR_CANNOT_DETERMINE_DESTFILE,
+                        &e.to_string(),
+                    )
                 })?
                 .to_path_buf();
             let destfile_relative = if job.keep_structure {
@@ -615,20 +677,9 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             };
             if !destfile_relative.as_os_str().is_empty() {
                 let destfile_absolute = destination.join(&destfile_relative);
-                // now that the destination path is known, check
-                // whether the list of matching files to delete
-                // contains it and remove it from the list: in
-                // this way the deletion process is selective and
-                // only deletes unwanted files in the target
-                // directory
-                if files_to_delete.contains(&destfile_absolute) {
-                    files_to_delete.remove(
-                        files_to_delete
-                            .iter()
-                            .position(|x| x.as_path() == destfile_absolute.as_path())
-                            .unwrap(),
-                    ); // cannot panic here
-                }
+                // now that the destination path is known, only retain in the
+                // list of files to delete the ones that are not our destfile
+                files_to_delete.retain(|f| cmp_fname(f) != cmp_fname(&destfile_absolute));
                 match copy_file(
                     &item,
                     &destfile_absolute,
@@ -677,11 +728,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                             LOG_ACTION_COPY,
                             Some(srcfile_relative.clone()),
                             Some(destfile_relative.clone()),
-                            if job.halt_on_errors {
-                                LOG_WHEN_END
-                            } else {
-                                LOG_WHEN_PROC
-                            },
+                            LOG_WHEN_PROC,
                             LOG_STATUS_ERR,
                             err.code(),
                             Some(format!("{ERR_FAILED} ({err})")),
@@ -705,11 +752,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                     LOG_ACTION_COPY,
                     Some(srcfile_relative.clone()),
                     Some(PathBuf::from(STR_UNDEFINED_VALUE)),
-                    if job.halt_on_errors {
-                        LOG_WHEN_END
-                    } else {
-                        LOG_WHEN_PROC
-                    },
+                    LOG_WHEN_PROC,
                     LOG_STATUS_ERR,
                     CJERR_CANNOT_DETERMINE_DESTFILE,
                     None,
@@ -749,7 +792,23 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                 let rmfile_relative = if job.keep_structure {
                     PathBuf::from(&item)
                         .strip_prefix(&job.destination_dir)
-                        .map_err(|e| Error::new(Kind::Unknown, ERR_CODE_GENERIC, &e.to_string()))?
+                        .map_err(|e| {
+                            log(
+                                LogType::Error,
+                                LOG_ACTION_DEL,
+                                None,
+                                Some(item.clone()),
+                                LOG_WHEN_PROC,
+                                LOG_STATUS_ERR,
+                                CJERR_CANNOT_DETERMINE_DESTFILE,
+                                None,
+                            );
+                            Error::new(
+                                Kind::Unknown,
+                                CJERR_CANNOT_DETERMINE_DESTFILE,
+                                &e.to_string(),
+                            )
+                        })?
                         .to_path_buf()
                 } else {
                     PathBuf::from(&item.file_name().unwrap_or(OsStr::new(""))).to_path_buf()
@@ -792,11 +851,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                             LOG_ACTION_DEL,
                             None,
                             Some(rmfile_relative.clone()),
-                            if job.halt_on_errors {
-                                LOG_WHEN_END
-                            } else {
-                                LOG_WHEN_PROC
-                            },
+                            LOG_WHEN_PROC,
                             LOG_STATUS_ERR,
                             err.code(),
                             Some(format!("{ERR_FAILED} ({err})")),
@@ -809,8 +864,8 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                                 Some(rmfile_relative.clone()),
                                 LOG_WHEN_END,
                                 LOG_STATUS_ERR,
-                                err.code(),
-                                Some(format!("{ERR_FAILED} ({err})")),
+                                CJERR_HALT_ON_ERROR,
+                                Some(format!("{ERR_FAILED} ({SHR_CJERR_HALT_ON_ERROR})")),
                             );
                             return Err(Error::new(
                                 Kind::Failed,
