@@ -337,14 +337,29 @@ fn extract_config(config_file: &PathBuf) -> Result<(CopyJobGlobalConfig, Vec<Cop
                                 &markers,
                                 &global_config.variables,
                                 &sys_variables,
-                            )?
+                            )
+                            .map_err(|e| {
+                                Error::new(
+                                    e.kind().clone(),
+                                    e.code(),
+                                    &format!(
+                                        "invalid source in job {} ({})",
+                                        job.job_name,
+                                        e.message(),
+                                    ),
+                                )
+                            })?
                             .as_path(),
                         )
                         .map_err(|e| {
                             Error::new(
                                 e.kind().clone(),
                                 e.code(),
-                                &format!("{}: `source` in job `{}`", e.message(), job.job_name),
+                                &format!(
+                                    "invalid source in job {} ({})",
+                                    job.job_name,
+                                    e.message(),
+                                ),
                             )
                         })?,
                         true,
@@ -356,14 +371,29 @@ fn extract_config(config_file: &PathBuf) -> Result<(CopyJobGlobalConfig, Vec<Cop
                                 &markers,
                                 &global_config.variables,
                                 &sys_variables,
-                            )?
+                            )
+                            .map_err(|e| {
+                                Error::new(
+                                    e.kind().clone(),
+                                    e.code(),
+                                    &format!(
+                                        "invalid destination in job {} ({})",
+                                        job.job_name,
+                                        e.message(),
+                                    ),
+                                )
+                            })?
                             .as_path(),
                         )
                         .map_err(|e| {
                             Error::new(
                                 e.kind().clone(),
                                 e.code(),
-                                &format!("{}: `destination` in job `{}`", e.message(), job.job_name),
+                                &format!(
+                                    "invalid destination in job {} ({})",
+                                    job.job_name,
+                                    e.message(),
+                                ),
                             )
                         })?,
                         true,
@@ -731,9 +761,19 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                             LOG_WHEN_PROC,
                             LOG_STATUS_ERR,
                             err.code(),
-                            Some(format!("{ERR_FAILED} ({err})")),
+                            Some(format!("copy failed ({err})")),
                         );
                         if job.halt_on_errors {
+                            log(
+                                LogType::Error,
+                                LOG_ACTION_COPY,
+                                Some(srcfile_relative.clone()),
+                                Some(destfile_relative.clone()),
+                                LOG_WHEN_END,
+                                LOG_STATUS_ERR,
+                                CJERR_HALT_ON_ERROR,
+                                Some(format!("job failed ({SHR_CJERR_HALT_ON_ERROR})")),
+                            );
                             return Err(Error::new(
                                 Kind::Failed,
                                 CJERR_HALT_ON_ERROR,
@@ -766,7 +806,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                         LOG_WHEN_END,
                         LOG_STATUS_ERR,
                         CJERR_HALT_ON_ERROR,
-                        Some(format!("{ERR_FAILED} ({SHR_CJERR_HALT_ON_ERROR})")),
+                        Some(format!("job failed ({SHR_CJERR_HALT_ON_ERROR})")),
                     );
                     return Err(Error::new(
                         Kind::Failed,
@@ -854,7 +894,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                             LOG_WHEN_PROC,
                             LOG_STATUS_ERR,
                             err.code(),
-                            Some(format!("{ERR_FAILED} ({err})")),
+                            Some(format!("removal failed ({err})")),
                         );
                         if job.halt_on_errors {
                             log(
@@ -865,7 +905,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                                 LOG_WHEN_END,
                                 LOG_STATUS_ERR,
                                 CJERR_HALT_ON_ERROR,
-                                Some(format!("{ERR_FAILED} ({SHR_CJERR_HALT_ON_ERROR})")),
+                                Some(format!("job failed ({SHR_CJERR_HALT_ON_ERROR})")),
                             );
                             return Err(Error::new(
                                 Kind::Failed,
@@ -898,7 +938,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             LOG_WHEN_END,
             LOG_STATUS_FAIL,
             CJERR_NO_SOURCE_FILES,
-            Some(SHR_CJERR_NO_SOURCE_FILES.to_string()),
+            Some("no files to copy".to_string()),
         );
         return Err(Error::new(
             Kind::Unavailable,
@@ -1040,13 +1080,6 @@ fn main() -> std::io::Result<()> {
     {
         if run_job(job, args.dry_run).is_err() {
             failed = true;
-            // log(
-            //     LogType::Error,
-            //     LOG_WHEN_PROC,
-            //     LOG_STATUS_FAIL,
-            //     e.code(),
-            //     Some(e.to_string()),
-            // );
             if global.halt_on_errors {
                 break;
             }
@@ -1059,7 +1092,7 @@ fn main() -> std::io::Result<()> {
             LOG_WHEN_END,
             LOG_STATUS_FAIL,
             ERR_CODE_GENERIC,
-            Some(ERR_SOME_JOBS_FAILED.to_string()),
+            Some("part of the jobs did not complete successfully".to_string()),
         );
         // flush log to prevent output loss on shortcut exit
         handle.flush();

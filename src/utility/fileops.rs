@@ -198,7 +198,11 @@ pub fn copy_file(
                                         ));
                                     }
                                 } else {
-                                    return Err(Error::from(e));
+                                    return Err(Error::new(
+                                        Kind::Failed,
+                                        ERR_CODE_GENERIC,
+                                        &e.to_string(),
+                                    ));
                                 }
                             }
                         }
