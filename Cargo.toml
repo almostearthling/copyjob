@@ -2,7 +2,7 @@
 name = "copyjob"
 description = "Perform complex file copy operations"
 readme = "README.md"
-version = "0.6.2"
+version = "0.7.1"
 authors = ["Francesco Garosi <francesco.garosi@gmail.com>"]
 repository = "https://github.com/almostearthling/copyjob/"
 edition = "2024"

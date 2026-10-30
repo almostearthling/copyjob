@@ -21,7 +21,7 @@ use crate::utility::result::*;
 #[derive(Debug, PartialEq, Eq)]
 pub enum Outcome {
     Done,
-    Skipped(i64),
+    Skipped(String),
 }
 
 // impl Outcome {
@@ -86,25 +86,22 @@ pub fn copy_file(
     if !source.exists() {
         return Err(Error::new(
             Kind::Invalid,
-            FOERR_SOURCE_NOT_EXISTS,
-            SHR_FOERR_SOURCE_NOT_EXISTS,
+            ERR_SOURCE_NOT_EXISTS,
         ));
     }
     if source.is_symlink() && !follow_symlinks {
-        return Ok(Outcome::Skipped(FOERR_SOURCE_IS_SYMLINK));
+        return Ok(Outcome::Skipped(ERR_SOURCE_IS_SYMLINK.to_string()));
     }
     if source.is_dir() {
         return Err(Error::new(
             Kind::Invalid,
-            FOERR_SOURCE_IS_DIR,
-            SHR_FOERR_SOURCE_IS_DIR,
+            ERR_SOURCE_IS_DIR,
         ));
     }
     if !source.is_file() {
         return Err(Error::new(
             Kind::Invalid,
-            FOERR_SOURCE_NOT_ACCESSIBLE,
-            SHR_FOERR_SOURCE_NOT_ACCESSIBLE,
+            ERR_SOURCE_NOT_ACCESSIBLE,
         ));
     }
 
@@ -118,8 +115,7 @@ pub fn copy_file(
             if soft_canonicalize(source)? == soft_canonicalize(destination)? {
                 return Err(Error::new(
                     Kind::Invalid,
-                    FOERR_DESTINATION_IS_ITSELF,
-                    SHR_FOERR_DESTINATION_IS_ITSELF,
+                    ERR_DESTINATION_IS_ITSELF,
                 ));
             }
             match symlink_metadata(&destination) {
@@ -128,25 +124,24 @@ pub fn copy_file(
                     // whether overwrite is false, compare s_stat, d_stat and
                     // possibly hashes
                     if !overwrite {
-                        return Ok(Outcome::Skipped(FOERR_DESTINATION_EXISTS));
+                        return Ok(Outcome::Skipped(ERR_DESTINATION_EXISTS.to_string()));
                     } else if d_stat.is_dir() {
                         return Err(Error::new(
                             Kind::Invalid,
-                            FOERR_DESTINATION_IS_DIR,
-                            SHR_FOERR_DESTINATION_IS_DIR,
+                            ERR_DESTINATION_IS_DIR,
                         ));
                     } else if d_stat.is_symlink() && !follow_symlinks {
-                        return Ok(Outcome::Skipped(FOERR_DESTINATION_IS_SYMLINK));
+                        return Ok(Outcome::Skipped(ERR_DESTINATION_IS_SYMLINK.to_string()));
                     }
 
                     if skip_newer && s_stat.modified()? <= d_stat.modified()? {
-                        return Ok(Outcome::Skipped(FOERR_DESTINATION_IS_NEWER));
+                        return Ok(Outcome::Skipped(ERR_DESTINATION_IS_NEWER.to_string()));
                     }
 
                     // only when asked perform content checking via SHA256
                     // and skip copy if the contents are the same
                     if check_content && sha256_digest(&source)? == sha256_digest(&destination)? {
-                        return Ok(Outcome::Skipped(FOERR_DESTINATION_IS_IDENTICAL));
+                        return Ok(Outcome::Skipped(ERR_DESTINATION_IS_IDENTICAL.to_string()));
                     }
 
                     // if this point is reached we are actually overwriting
@@ -163,8 +158,7 @@ pub fn copy_file(
                         if !destination_dir.pop() {
                             return Err(Error::new(
                                 Kind::Forbidden,
-                                FOERR_CANNOT_CREATE_DIR,
-                                SHR_FOERR_CANNOT_CREATE_DIR,
+                                ERR_CANNOT_CREATE_DIR,
                             ));
                         }
                         match metadata(&destination_dir) {
@@ -172,8 +166,7 @@ pub fn copy_file(
                                 if !d_dirdata.is_dir() {
                                     return Err(Error::new(
                                         Kind::Forbidden,
-                                        FOERR_CANNOT_CREATE_DIR,
-                                        SHR_FOERR_CANNOT_CREATE_DIR,
+                                        ERR_CANNOT_CREATE_DIR,
                                     ));
                                 }
                             }
@@ -186,22 +179,19 @@ pub fn copy_file(
                                     if !create_directories {
                                         return Err(Error::new(
                                             Kind::Forbidden,
-                                            FOERR_CANNOT_CREATE_DIR,
-                                            SHR_FOERR_CANNOT_CREATE_DIR,
+                                            ERR_CANNOT_CREATE_DIR,
                                         ));
                                     }
                                     if !dry_run && create_dir_all(&destination_dir).is_err() {
                                         return Err(Error::new(
                                             Kind::Forbidden,
-                                            FOERR_CANNOT_CREATE_DIR,
-                                            SHR_FOERR_CANNOT_CREATE_DIR,
+                                            ERR_CANNOT_CREATE_DIR,
                                         ));
                                     }
                                 } else {
                                     return Err(Error::new(
                                         Kind::Unavailable,
-                                        FOERR_DESTINATION_NOT_ACCESSIBLE,
-                                        &e.to_string(),
+                                        &format!("{ERR_DESTINATION_NOT_ACCESSIBLE} ({e})"),
                                     ));
                                 }
                             }
@@ -209,8 +199,7 @@ pub fn copy_file(
                     } else {
                         return Err(Error::new(
                             Kind::Unavailable,
-                            FOERR_DESTINATION_NOT_ACCESSIBLE,
-                            &e.to_string(),
+                            &format!("{ERR_DESTINATION_NOT_ACCESSIBLE} ({e})"),
                         ));
                     }
                 }
@@ -222,7 +211,7 @@ pub fn copy_file(
                 // no opposing condition (file age, contents, accessibility, etc)
                 if overwriting && trash_on_overwrite {
                     trash::delete(&destination)
-                        .map_err(|e| Error::new(Kind::Failed, ERR_CODE_GENERIC, &e.to_string()))?;
+                        .map_err(|e| Error::new(Kind::Failed, &e.to_string()))?;
                 }
 
                 // actually copy the file using OS API
@@ -232,14 +221,12 @@ pub fn copy_file(
                         if e.kind() == std::io::ErrorKind::PermissionDenied {
                             Error::new(
                                 Kind::Forbidden,
-                                FOERR_CANNOT_WRITE_DESTINATION,
-                                SHR_FOERR_CANNOT_WRITE_DESTINATION,
+                                ERR_CANNOT_WRITE_DESTINATION,
                             )
                         } else {
                             Error::new(
                                 Kind::Unavailable,
-                                FOERR_DESTINATION_NOT_ACCESSIBLE,
-                                &e.to_string(),
+                                &format!("{ERR_DESTINATION_NOT_ACCESSIBLE} ({e})"),
                             )
                         }
                     })
@@ -247,10 +234,9 @@ pub fn copy_file(
                 Ok(Outcome::Done)
             }
         }
-        Err(_) => Err(Error::new(
+        Err(e) => Err(Error::new(
             Kind::Unavailable,
-            FOERR_SOURCE_NOT_ACCESSIBLE,
-            SHR_FOERR_SOURCE_NOT_ACCESSIBLE,
+            &format!("{ERR_SOURCE_NOT_ACCESSIBLE} ({e})"),
         )),
     }
 }
@@ -268,11 +254,10 @@ pub fn remove_file(
             if d_stat.is_dir() {
                 Err(Error::new(
                     Kind::Invalid,
-                    FOERR_DESTINATION_IS_DIR,
-                    SHR_FOERR_DESTINATION_IS_DIR,
+                    ERR_DESTINATION_IS_DIR,
                 ))
             } else if d_stat.is_symlink() && !follow_symlinks {
-                Ok(Outcome::Skipped(FOERR_DESTINATION_IS_SYMLINK))
+                Ok(Outcome::Skipped(ERR_DESTINATION_IS_SYMLINK.to_string()))
             } else if trash_on_delete {
                 if !dry_run {
                     trash::delete(&destination)
@@ -280,8 +265,7 @@ pub fn remove_file(
                         .map_err(|e| {
                             Error::new(
                                 Kind::Unavailable,
-                                FOERR_DESTINATION_NOT_ACCESSIBLE,
-                                &e.to_string(),
+                                &format!("{ERR_DESTINATION_NOT_ACCESSIBLE} ({e})"),
                             )
                         })
                 } else {
@@ -293,8 +277,7 @@ pub fn remove_file(
                     .map_err(|e| {
                         Error::new(
                             Kind::Unavailable,
-                            FOERR_DESTINATION_NOT_ACCESSIBLE,
-                            &e.to_string(),
+                            &format!("{ERR_DESTINATION_NOT_ACCESSIBLE} ({e})"),
                         )
                     })
             } else {
@@ -303,8 +286,7 @@ pub fn remove_file(
         }
         Err(e) => Err(Error::new(
             Kind::Unavailable,
-            FOERR_DESTINATION_NOT_ACCESSIBLE,
-            &e.to_string(),
+            &format!("{ERR_DESTINATION_NOT_ACCESSIBLE} ({e})"),
         )),
     }
 }

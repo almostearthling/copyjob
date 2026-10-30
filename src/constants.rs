@@ -14,7 +14,8 @@ pub const STR_INVALID_TYPE: &str = "<invalid_type>";
 pub const STR_INVALID_VALUE: &str = "<invalid_value>";
 
 // errors
-pub const ERR_FAILED: &str = "failed";
+pub const RES_OK: &str = "success";
+pub const RES_FAILED: &str = "failed";
 
 pub const ERR_INVALID_CONFIG: &str = "invalid configuration";
 pub const ERR_INVALID_CFG_ENTRY: &str = "invalid configuration entry";
@@ -25,101 +26,31 @@ pub const ERR_INVALID_PARAMETER: &str = "invalid parameter";
 pub const ERR_INVALID_PARAMETER_LIST: &str = "invalid list or list element";
 pub const ERR_DUPLICATE_JOB_NAME: &str = "duplicate job name";
 pub const ERR_LOGGER_NOT_INITIALIZED: &str = "could not initialize logger";
-pub const ERR_SOME_JOBS_FAILED: &str = "one or more jobs did not succeed";
 pub const ERR_RESULTING_DIR_EMPTY: &str = "resulting directory name is empty";
-
-// values for errors in copy_file, remove_file
-pub const FOERR_GENERIC_FAILURE: i64 = 3001;
-pub const FOERR_DESTINATION_IS_ITSELF: i64 = 3011;
-pub const FOERR_DESTINATION_IS_DIR: i64 = 3012;
-pub const FOERR_DESTINATION_IS_SYMLINK: i64 = 3013;
-pub const FOERR_DESTINATION_IS_NEWER: i64 = 3014;
-pub const FOERR_DESTINATION_IS_IDENTICAL: i64 = 3015;
-pub const FOERR_CANNOT_WRITE_DESTINATION: i64 = 3016;
-pub const FOERR_DESTINATION_EXISTS: i64 = 3021;
-pub const FOERR_DESTINATION_NOT_ACCESSIBLE: i64 = 3022;
-pub const FOERR_CANNOT_CREATE_DIR: i64 = 3031;
-pub const FOERR_CANNOT_CREATE_FILE: i64 = 3032;
-pub const FOERR_SOURCE_NOT_EXISTS: i64 = 3041;
-pub const FOERR_SOURCE_IS_DIR: i64 = 3042;
-pub const FOERR_SOURCE_IS_SYMLINK: i64 = 3043;
-pub const FOERR_SOURCE_NOT_ACCESSIBLE: i64 = 3044;
-
-// values for errors in run_single_job, run_jobs
-pub const CJERR_GENERIC_FAILURE: i64 = 2001;
-pub const CJERR_SOURCE_DIR_NOT_EXISTS: i64 = 2011;
-pub const CJERR_DESTINATION_DIR_NOT_EXISTS: i64 = 2012;
-pub const CJERR_NO_SOURCE_FILES: i64 = 2013;
-pub const CJERR_DESTINATION_NOT_DIR: i64 = 2014;
-pub const CJERR_CANNOT_DETERMINE_DESTFILE: i64 = 2021;
-pub const CJERR_HALT_ON_ERROR: i64 = 2041;
-
-// values for generic errors
-pub const ERR_CODE_OK: i64 = 0;
-pub const ERR_CODE_NONE: i64 = -1;
-pub const ERR_CODE_GENERIC: i64 = 9999;
-pub const ERR_CODE_INVALID_CONFIG_FILE: i64 = 9998;
-pub const ERR_CODE_TOO_MANY_REPLACEMENTS: i64 = 9997;
-pub const ERR_CODE_SOURCE_DEST_OVERLAP: i64 = 9996;
-pub const ERR_CODE_LOCAL_VAR_UNDEFINED: i64 = 9995;
-
-// machine readable codes
-pub const SMR_ERR_CODE_OK: &str = "OK";
-pub const SMR_ERR_CODE_NONE: &str = "MSG";
-pub const SMR_ERR_CODE_GENERIC: &str = "ERR_GENERIC";
-pub const SMR_ERR_CODE_INVALID_CONFIG_FILE: &str = "ERR_INVALID_CONFIG";
-pub const SMR_ERR_CODE_TOO_MANY_REPLACEMENTS: &str = "ERR_TOO_MANY_REPLACEMENTS";
-pub const SMR_ERR_CODE_SOURCE_DEST_OVERLAP: &str = "ERR_SOURCE_DEST_OVERLAP";
-pub const SMR_ERR_CODE_LOCAL_VAR_UNDEFINED: &str = "ERR_LOCAL_VAR_UNDEFINED";
-pub const SMR_FOERR_DESTINATION_IS_ITSELF: &str = "FOERR_DESTINATION_IS_ITSELF";
-pub const SMR_FOERR_DESTINATION_IS_DIR: &str = "FOERR_DESTINATION_IS_DIR";
-pub const SMR_FOERR_DESTINATION_IS_SYMLINK: &str = "FOERR_DESTINATION_IS_SYMLINK";
-pub const SMR_FOERR_DESTINATION_IS_NEWER: &str = "FOERR_DESTINATION_IS_NEWER";
-pub const SMR_FOERR_DESTINATION_IS_IDENTICAL: &str = "FOERR_DESTINATION_IS_IDENTICAL";
-pub const SMR_FOERR_CANNOT_WRITE_DESTINATION: &str = "FOERR_CANNOT_WRITE_DESTINATION";
-pub const SMR_FOERR_DESTINATION_EXISTS: &str = "FOERR_DESTINATION_EXISTS";
-pub const SMR_FOERR_DESTINATION_NOT_ACCESSIBLE: &str = "FOERR_DESTINATION_NOT_ACCESSIBLE";
-pub const SMR_FOERR_CANNOT_CREATE_DIR: &str = "FOERR_CANNOT_CREATE_DIR";
-pub const SMR_FOERR_CANNOT_CREATE_FILE: &str = "FOERR_CANNOT_CREATE_FILE";
-pub const SMR_FOERR_SOURCE_NOT_EXISTS: &str = "FOERR_SOURCE_NOT_EXISTS";
-pub const SMR_FOERR_SOURCE_IS_DIR: &str = "FOERR_SOURCE_IS_DIR";
-pub const SMR_FOERR_SOURCE_IS_SYMLINK: &str = "FOERR_SOURCE_IS_SYMLINK";
-pub const SMR_FOERR_SOURCE_NOT_ACCESSIBLE: &str = "FOERR_SOURCE_NOT_ACCESSIBLE";
-pub const SMR_CJERR_DESTINATION_DIR_NOT_EXISTS: &str = "CJERR_DESTINATION_DIR_NOT_EXISTS";
-pub const SMR_CJERR_SOURCE_DIR_NOT_EXISTS: &str = "CJERR_SOURCE_DIR_NOT_EXISTS";
-pub const SMR_CJERR_NO_SOURCE_FILES: &str = "CJERR_NO_SOURCE_FILES";
-pub const SMR_CJERR_DESTINATION_NOT_DIR: &str = "CJERR_DESTINATION_NOT_DIR";
-pub const SMR_CJERR_CANNOT_DETERMINE_DESTFILE: &str = "CJERR_CANNOT_DETERMINE_DESTFILE";
-pub const SMR_CJERR_HALT_ON_ERROR: &str = "CJERR_HALT_ON_ERROR";
-
-// human readable codes
-pub const SHR_ERR_CODE_OK: &str = "success";
-pub const SHR_ERR_CODE_NONE: &str = "message";
-pub const SHR_ERR_CODE_GENERIC: &str = "generic failure";
-pub const SHR_ERR_CODE_INVALID_CONFIG_FILE: &str = "invalid config file";
-pub const SHR_ERR_CODE_TOO_MANY_REPLACEMENTS: &str = "too many variable replacements";
-pub const SHR_ERR_CODE_SOURCE_DEST_OVERLAP: &str = "source and destination overlap";
-pub const SHR_ERR_CODE_LOCAL_VAR_UNDEFINED: &str = "local variable used but not defined";
-pub const SHR_FOERR_DESTINATION_IS_ITSELF: &str = "failed attempt to copy on self";
-pub const SHR_FOERR_DESTINATION_IS_DIR: &str = "destination is a directory";
-pub const SHR_FOERR_DESTINATION_IS_SYMLINK: &str = "destination is a symbolic link";
-pub const SHR_FOERR_DESTINATION_IS_NEWER: &str = "destination is more recent than source";
-pub const SHR_FOERR_DESTINATION_IS_IDENTICAL: &str = "destination is identical to source";
-pub const SHR_FOERR_CANNOT_WRITE_DESTINATION: &str = "cannot write to destination";
-pub const SHR_FOERR_DESTINATION_EXISTS: &str = "destination exists";
-pub const SHR_FOERR_DESTINATION_NOT_ACCESSIBLE: &str = "destination is not accessible";
-pub const SHR_FOERR_CANNOT_CREATE_DIR: &str = "cannot create directory";
-pub const SHR_FOERR_CANNOT_CREATE_FILE: &str = "cannot create file";
-pub const SHR_FOERR_SOURCE_NOT_EXISTS: &str = "source file does not exist";
-pub const SHR_FOERR_SOURCE_IS_DIR: &str = "source file is a directory";
-pub const SHR_FOERR_SOURCE_IS_SYMLINK: &str = "source file is a symbolic link";
-pub const SHR_FOERR_SOURCE_NOT_ACCESSIBLE: &str = "source file is not accessible";
-pub const SHR_CJERR_DESTINATION_DIR_NOT_EXISTS: &str = "destination directory does not exist";
-pub const SHR_CJERR_SOURCE_DIR_NOT_EXISTS: &str = "source directory does not exist";
-pub const SHR_CJERR_NO_SOURCE_FILES: &str = "no source files found";
-pub const SHR_CJERR_DESTINATION_NOT_DIR: &str = "destination is not a directory";
-pub const SHR_CJERR_CANNOT_DETERMINE_DESTFILE: &str = "cannot determine destination file";
-pub const SHR_CJERR_HALT_ON_ERROR: &str = "ending job after error";
+pub const ERR_GENERIC: &str = "generic failure";
+pub const ERR_TOO_MANY_REPLACEMENTS: &str = "too many variable replacements";
+pub const ERR_SOURCE_DEST_OVERLAP: &str = "source and destination overlap";
+pub const ERR_LOCAL_VAR_UNDEFINED: &str = "local variable used but not defined";
+pub const ERR_DESTINATION_IS_ITSELF: &str = "failed attempt to copy on self";
+pub const ERR_DESTINATION_IS_DIR: &str = "destination is a directory";
+pub const ERR_DESTINATION_IS_SYMLINK: &str = "destination is a symbolic link";
+pub const ERR_DESTINATION_IS_NEWER: &str = "destination is more recent than source";
+pub const ERR_DESTINATION_IS_IDENTICAL: &str = "destination is identical to source";
+pub const ERR_CANNOT_WRITE_DESTINATION: &str = "cannot write to destination";
+pub const ERR_DESTINATION_EXISTS: &str = "destination exists";
+pub const ERR_DESTINATION_NOT_ACCESSIBLE: &str = "destination is not accessible";
+pub const ERR_CANNOT_CREATE_DIR: &str = "cannot create directory";
+pub const ERR_CANNOT_CREATE_FILE: &str = "cannot create file";
+pub const ERR_SOURCE_NOT_EXISTS: &str = "source file does not exist";
+pub const ERR_SOURCE_IS_DIR: &str = "source file is a directory";
+pub const ERR_SOURCE_IS_SYMLINK: &str = "source file is a symbolic link";
+pub const ERR_SOURCE_NOT_ACCESSIBLE: &str = "source file is not accessible";
+pub const ERR_DESTINATION_DIR_NOT_EXISTS: &str = "destination directory does not exist";
+pub const ERR_SOURCE_DIR_NOT_EXISTS: &str = "source directory does not exist";
+pub const ERR_NO_SOURCE_FILES: &str = "no source files found";
+pub const ERR_DESTINATION_NOT_DIR: &str = "destination is not a directory";
+pub const ERR_CANNOT_DETERMINE_DESTFILE: &str = "cannot determine destination file";
+pub const ERR_HALT_ON_ERROR: &str = "ending job after error";
 
 // operation identifiers for output
 pub const LOG_ACTION_COPY: &str = "COPY";

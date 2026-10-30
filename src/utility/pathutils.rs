@@ -180,8 +180,7 @@ impl ReplaceVars for OsString {
                 if cap > MAX_REPLACE_ITERATIONS {
                     return Err(Error::new(
                         super::result::Kind::Failed,
-                        ERR_CODE_TOO_MANY_REPLACEMENTS,
-                        SHR_ERR_CODE_TOO_MANY_REPLACEMENTS,
+                        ERR_TOO_MANY_REPLACEMENTS,
                     ));
                 }
             } else {
@@ -271,8 +270,7 @@ pub fn interpolate_dir(
     if !OsString::from(raw).check_vars(&RE_VARMENTION_LOC, local_vars) {
         Err(Error::new(
             Kind::Unavailable,
-            ERR_CODE_LOCAL_VAR_UNDEFINED,
-            SHR_ERR_CODE_LOCAL_VAR_UNDEFINED,
+            ERR_LOCAL_VAR_UNDEFINED,
         ))
     } else {
         Ok(PathBuf::from({

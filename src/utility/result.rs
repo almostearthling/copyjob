@@ -82,7 +82,6 @@ impl fmt::Display for Origin {
 pub struct Error {
     kind: Kind,
     origin: Origin,
-    code: i64,
     message: String, // freeform message: owned in order to avoid lifetime management
 }
 
@@ -91,11 +90,11 @@ impl fmt::Display for Error {
         if self.origin != Origin::Native {
             write!(
                 f,
-                "{} ({}): {} / {}",
-                self.kind, self.origin, self.code, self.message
+                "{} ({}): {}",
+                self.kind, self.origin, self.message
             )
         } else {
-            write!(f, "{}: {} / {}", self.kind, self.code, self.message)
+            write!(f, "{}: {}", self.kind, self.message)
         }
     }
 }
@@ -112,7 +111,6 @@ impl From<std::io::Error> for Error {
                 _ => Kind::Unknown,
             },
             origin: Origin::StdIo,
-            code: e.raw_os_error().unwrap_or(ERR_CODE_GENERIC as i32) as i64,
             message: e.to_string(),
         }
     }
@@ -123,7 +121,6 @@ impl From<Utf8Error> for Error {
         Self {
             kind: Kind::Unconverted,
             origin: Origin::Utf8,
-            code: ERR_CODE_GENERIC,
             message: value.to_string(),
         }
     }
@@ -135,8 +132,7 @@ impl From<()> for Error {
         Self {
             kind: Kind::Failed,
             origin: Origin::Unit,
-            code: ERR_CODE_GENERIC,
-            message: ERR_FAILED.to_owned(),
+            message: RES_FAILED.to_owned(),
         }
     }
 }
@@ -145,11 +141,10 @@ impl From<()> for Error {
 impl Error {
     // this is used only to natively create an instance of `Error`: only
     // conversions set the `origin` property to something different
-    pub fn new(kind: Kind, code: i64, message: &str) -> Self {
+    pub fn new(kind: Kind, message: &str) -> Self {
         Self {
             kind,
             origin: Origin::Native,
-            code,
             message: message.to_string(),
         }
     }
@@ -163,10 +158,6 @@ impl Error {
         &self.origin
     }
 
-    pub fn code(&self) -> i64 {
-        self.code
-    }
-
     pub fn message(&self) -> &str {
         &self.message
     }
@@ -178,7 +169,6 @@ impl<T: std::error::Error> From<Box<T>> for Error {
         Self {
             kind: Kind::Unknown,
             origin: Origin::Unknown,
-            code: ERR_CODE_GENERIC,
             message: e.to_string(),
         }
     }

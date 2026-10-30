@@ -104,8 +104,7 @@ fn extract_config(config_file: &PathBuf) -> Result<(CopyJobGlobalConfig, Vec<Cop
     fn error_invalid_config(key: &str) -> Error {
         Error::new(
             Kind::Invalid,
-            ERR_CODE_INVALID_CONFIG_FILE,
-            format!("{}:{key}", SHR_ERR_CODE_INVALID_CONFIG_FILE,).as_str(),
+            format!("{}:{key}", ERR_INVALID_CONFIG).as_str(),
         )
     }
 
@@ -114,7 +113,6 @@ fn extract_config(config_file: &PathBuf) -> Result<(CopyJobGlobalConfig, Vec<Cop
         if p.as_os_str().is_empty() || p.parent().is_none() {
             Err(Error::new(
                 Kind::Empty,
-                ERR_CODE_INVALID_CONFIG_FILE,
                 ERR_RESULTING_DIR_EMPTY,
             ))
         } else {
@@ -184,8 +182,7 @@ fn extract_config(config_file: &PathBuf) -> Result<(CopyJobGlobalConfig, Vec<Cop
         Err(e) => {
             return Err(Error::new(
                 Kind::Invalid,
-                ERR_CODE_INVALID_CONFIG_FILE,
-                &e.to_string(),
+                &format!("{ERR_INVALID_CONFIG} ({e})"),
             ));
         }
     };
@@ -326,7 +323,6 @@ fn extract_config(config_file: &PathBuf) -> Result<(CopyJobGlobalConfig, Vec<Cop
                     if global_config.job_list.contains(&job.job_name) {
                         return Err(Error::new(
                             Kind::Invalid,
-                            ERR_CODE_INVALID_CONFIG_FILE,
                             &format!("{ERR_DUPLICATE_JOB_NAME}: {}", job.job_name),
                         ));
                     }
@@ -341,7 +337,6 @@ fn extract_config(config_file: &PathBuf) -> Result<(CopyJobGlobalConfig, Vec<Cop
                             .map_err(|e| {
                                 Error::new(
                                     e.kind().clone(),
-                                    e.code(),
                                     &format!(
                                         "invalid source in job {} ({})",
                                         job.job_name,
@@ -354,7 +349,6 @@ fn extract_config(config_file: &PathBuf) -> Result<(CopyJobGlobalConfig, Vec<Cop
                         .map_err(|e| {
                             Error::new(
                                 e.kind().clone(),
-                                e.code(),
                                 &format!(
                                     "invalid source in job {} ({})",
                                     job.job_name,
@@ -375,7 +369,6 @@ fn extract_config(config_file: &PathBuf) -> Result<(CopyJobGlobalConfig, Vec<Cop
                             .map_err(|e| {
                                 Error::new(
                                     e.kind().clone(),
-                                    e.code(),
                                     &format!(
                                         "invalid destination in job {} ({})",
                                         job.job_name,
@@ -388,7 +381,6 @@ fn extract_config(config_file: &PathBuf) -> Result<(CopyJobGlobalConfig, Vec<Cop
                         .map_err(|e| {
                             Error::new(
                                 e.kind().clone(),
-                                e.code(),
                                 &format!(
                                     "invalid destination in job {} ({})",
                                     job.job_name,
@@ -441,10 +433,9 @@ fn extract_config(config_file: &PathBuf) -> Result<(CopyJobGlobalConfig, Vec<Cop
                     if csrc.starts_with(&cdest) || cdest.starts_with(csrc) {
                         return Err(Error::new(
                             Kind::Unsupported,
-                            ERR_CODE_SOURCE_DEST_OVERLAP,
                             &format!(
                                 "{}: `{}`, `{}`",
-                                SHR_ERR_CODE_SOURCE_DEST_OVERLAP,
+                                ERR_SOURCE_DEST_OVERLAP,
                                 &job.source_dir.to_string_lossy(),
                                 &job.destination_dir.to_string_lossy(),
                             ),
@@ -455,21 +446,18 @@ fn extract_config(config_file: &PathBuf) -> Result<(CopyJobGlobalConfig, Vec<Cop
                     if Regex::new(&job.include_pattern).is_err() {
                         return Err(Error::new(
                             Kind::Failed,
-                            ERR_CODE_INVALID_CONFIG_FILE,
                             &format!("{ERR_INVALID_REGEX}: `{}`", &job.include_pattern,),
                         ));
                     }
                     if Regex::new(&job.exclude_pattern).is_err() {
                         return Err(Error::new(
                             Kind::Failed,
-                            ERR_CODE_INVALID_CONFIG_FILE,
                             &format!("{ERR_INVALID_REGEX}: `{}`", &job.exclude_pattern,),
                         ));
                     }
                     if Regex::new(&job.excludedir_pattern).is_err() {
                         return Err(Error::new(
                             Kind::Failed,
-                            ERR_CODE_INVALID_CONFIG_FILE,
                             &format!("{ERR_INVALID_REGEX}: `{}`", &job.excludedir_pattern,),
                         ));
                     }
@@ -550,7 +538,7 @@ fn list_files_matching(
 /// Perform a single copy job, by building a list of files to copy and by
 /// copying them if possible using `copyfile` seen above.
 fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
-    let log = |severity, action, source, destination, when, status, message_code, message_extra| {
+    let log = |severity, action, source, destination, when, status, message: &str| {
         log_base(
             severity,
             LOG_EMITTER_JOB,
@@ -560,8 +548,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             destination,
             when,
             status,
-            message_code,
-            message_extra,
+            message,
         );
     };
 
@@ -586,13 +573,11 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             None,
             LOG_WHEN_START,
             LOG_STATUS_ERR,
-            CJERR_SOURCE_DIR_NOT_EXISTS,
-            None,
+            ERR_SOURCE_DIR_NOT_EXISTS,
         );
         return Err(Error::new(
             Kind::Unavailable,
-            CJERR_SOURCE_DIR_NOT_EXISTS,
-            SHR_CJERR_SOURCE_DIR_NOT_EXISTS,
+            ERR_SOURCE_DIR_NOT_EXISTS,
         ));
     }
     if job.destination_dir.exists() && !job.destination_dir.is_dir() {
@@ -603,13 +588,11 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             Some(job.destination_dir.clone()),
             LOG_WHEN_START,
             LOG_STATUS_ERR,
-            CJERR_DESTINATION_NOT_DIR,
-            None,
+            ERR_DESTINATION_NOT_DIR,
         );
         return Err(Error::new(
             Kind::Unavailable,
-            CJERR_DESTINATION_NOT_DIR,
-            SHR_CJERR_DESTINATION_NOT_DIR,
+            ERR_DESTINATION_NOT_DIR,
         ));
     }
     if !job.destination_dir.is_dir() && !job.create_directories {
@@ -620,13 +603,11 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             Some(job.destination_dir.clone()),
             LOG_WHEN_START,
             LOG_STATUS_ERR,
-            CJERR_DESTINATION_DIR_NOT_EXISTS,
-            None,
+            ERR_DESTINATION_DIR_NOT_EXISTS,
         );
         return Err(Error::new(
             Kind::Unavailable,
-            CJERR_DESTINATION_DIR_NOT_EXISTS,
-            SHR_CJERR_DESTINATION_DIR_NOT_EXISTS,
+            ERR_DESTINATION_DIR_NOT_EXISTS,
         ));
     }
 
@@ -664,6 +645,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             // an empty vector will delete no files
             Vec::new()
         };
+        let msg = format!("copying {} files", files_to_copy.len());
         log(
             LogType::Info,
             LOG_ACTION_JOB,
@@ -671,8 +653,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             Some(job.destination_dir.clone()),
             LOG_WHEN_START,
             LOG_STATUS_MSG,
-            ERR_CODE_NONE,
-            Some(format!("copying {} files", files_to_copy.len())),
+            msg.as_str(),
         );
         for item in &files_to_copy {
             // here we also copy the file: if there is any error while
@@ -690,13 +671,11 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                         Some(destination.clone()),
                         LOG_WHEN_PROC,
                         LOG_STATUS_ERR,
-                        CJERR_CANNOT_DETERMINE_DESTFILE,
-                        None,
+                        ERR_CANNOT_DETERMINE_DESTFILE,
                     );
                     Error::new(
                         Kind::Unknown,
-                        CJERR_CANNOT_DETERMINE_DESTFILE,
-                        &e.to_string(),
+                        &format!("{ERR_GENERIC} ({e})"),
                     )
                 })?
                 .to_path_buf();
@@ -731,11 +710,10 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                                 Some(destfile_relative.clone()),
                                 LOG_WHEN_PROC,
                                 LOG_STATUS_OK,
-                                ERR_CODE_OK,
-                                Some(OUTCOME_COPIED.to_string()),
+                                OUTCOME_COPIED,
                             );
                         }
-                        Outcome::Skipped(code) => {
+                        Outcome::Skipped(_) => {
                             log(
                                 LogType::Info,
                                 LOG_ACTION_COPY,
@@ -743,12 +721,12 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                                 Some(destfile_relative.clone()),
                                 LOG_WHEN_PROC,
                                 LOG_STATUS_OK,
-                                code,
-                                Some(OUTCOME_SKIPPED.to_string()),
+                                OUTCOME_SKIPPED,
                             );
                         }
                     },
-                    Err(err) => {
+                    Err(e) => {
+                        let msg = format!("copy failed ({e})");
                         log(
                             if job.halt_on_errors {
                                 LogType::Error
@@ -760,8 +738,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                             Some(destfile_relative.clone()),
                             LOG_WHEN_PROC,
                             LOG_STATUS_ERR,
-                            err.code(),
-                            Some(format!("copy failed ({err})")),
+                            msg.as_str(),
                         );
                         if job.halt_on_errors {
                             log(
@@ -771,13 +748,11 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                                 Some(destfile_relative.clone()),
                                 LOG_WHEN_END,
                                 LOG_STATUS_ERR,
-                                CJERR_HALT_ON_ERROR,
-                                Some(format!("job failed ({SHR_CJERR_HALT_ON_ERROR})")),
+                                &format!("job failed ({ERR_HALT_ON_ERROR})"),
                             );
                             return Err(Error::new(
                                 Kind::Failed,
-                                CJERR_HALT_ON_ERROR,
-                                SHR_CJERR_HALT_ON_ERROR,
+                                ERR_HALT_ON_ERROR,
                             ));
                         };
                     }
@@ -794,8 +769,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                     Some(PathBuf::from(STR_UNDEFINED_VALUE)),
                     LOG_WHEN_PROC,
                     LOG_STATUS_ERR,
-                    CJERR_CANNOT_DETERMINE_DESTFILE,
-                    None,
+                    ERR_CANNOT_DETERMINE_DESTFILE,
                 );
                 if job.halt_on_errors {
                     log(
@@ -805,18 +779,17 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                         Some(destfile_relative.clone()),
                         LOG_WHEN_END,
                         LOG_STATUS_ERR,
-                        CJERR_HALT_ON_ERROR,
-                        Some(format!("job failed ({SHR_CJERR_HALT_ON_ERROR})")),
+                        &format!("job failed ({ERR_HALT_ON_ERROR})"),
                     );
                     return Err(Error::new(
                         Kind::Failed,
-                        CJERR_HALT_ON_ERROR,
-                        SHR_CJERR_HALT_ON_ERROR,
+                        ERR_HALT_ON_ERROR,
                     ));
                 }
             }
         }
         // if not remove_other_matching the vector is empty
+        let msg = format!("deleting {} files", files_to_delete.len());
         if !files_to_delete.is_empty() {
             log(
                 LogType::Info,
@@ -825,8 +798,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                 Some(job.destination_dir.clone()),
                 LOG_WHEN_PROC,
                 LOG_STATUS_MSG,
-                ERR_CODE_NONE,
-                Some(format!("deleting {} files", files_to_delete.len())),
+                msg.as_str(),
             );
             for item in &files_to_delete {
                 let rmfile_relative = if job.keep_structure {
@@ -840,13 +812,11 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                                 Some(item.clone()),
                                 LOG_WHEN_PROC,
                                 LOG_STATUS_ERR,
-                                CJERR_CANNOT_DETERMINE_DESTFILE,
-                                None,
+                                ERR_CANNOT_DETERMINE_DESTFILE,
                             );
                             Error::new(
                                 Kind::Unknown,
-                                CJERR_CANNOT_DETERMINE_DESTFILE,
-                                &e.to_string(),
+                                &format!("{ERR_GENERIC} ({e})"),
                             )
                         })?
                         .to_path_buf()
@@ -864,11 +834,10 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                                 Some(rmfile_relative.clone()),
                                 LOG_WHEN_PROC,
                                 LOG_STATUS_OK,
-                                ERR_CODE_OK,
-                                Some(OUTCOME_REMOVED.to_string()),
+                                OUTCOME_REMOVED,
                             );
                         }
-                        Outcome::Skipped(code) => {
+                        Outcome::Skipped(_) => {
                             log(
                                 LogType::Info,
                                 LOG_ACTION_DEL,
@@ -876,12 +845,12 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                                 Some(rmfile_relative.clone()),
                                 LOG_WHEN_PROC,
                                 LOG_STATUS_OK,
-                                code,
-                                Some(OUTCOME_SKIPPED.to_string()),
+                                OUTCOME_SKIPPED,
                             );
                         }
                     },
-                    Err(err) => {
+                    Err(e) => {
+                        let msg = format!("removal failed ({e})");
                         log(
                             if job.halt_on_errors {
                                 LogType::Error
@@ -893,8 +862,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                             Some(rmfile_relative.clone()),
                             LOG_WHEN_PROC,
                             LOG_STATUS_ERR,
-                            err.code(),
-                            Some(format!("removal failed ({err})")),
+                            msg.as_str(),
                         );
                         if job.halt_on_errors {
                             log(
@@ -904,13 +872,11 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                                 Some(rmfile_relative.clone()),
                                 LOG_WHEN_END,
                                 LOG_STATUS_ERR,
-                                CJERR_HALT_ON_ERROR,
-                                Some(format!("job failed ({SHR_CJERR_HALT_ON_ERROR})")),
+                                &format!("job failed ({ERR_HALT_ON_ERROR})"),
                             );
                             return Err(Error::new(
                                 Kind::Failed,
-                                CJERR_HALT_ON_ERROR,
-                                SHR_CJERR_HALT_ON_ERROR,
+                                ERR_HALT_ON_ERROR,
                             ));
                         };
                     }
@@ -924,10 +890,9 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             Some(job.destination_dir.clone()),
             LOG_WHEN_END,
             LOG_STATUS_OK,
-            ERR_CODE_OK,
-            Some(format!(
+            &format!(
                 "copied {num_files_copied} files, deleted {num_files_deleted} files"
-            )),
+            ),
         );
     } else {
         log(
@@ -937,13 +902,11 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             Some(job.destination_dir.clone()),
             LOG_WHEN_END,
             LOG_STATUS_FAIL,
-            CJERR_NO_SOURCE_FILES,
-            Some("no files to copy".to_string()),
+            "no files to copy",
         );
         return Err(Error::new(
             Kind::Unavailable,
-            CJERR_NO_SOURCE_FILES,
-            SHR_CJERR_NO_SOURCE_FILES,
+            ERR_NO_SOURCE_FILES,
         ));
     }
 
@@ -1039,7 +1002,7 @@ fn main() -> std::io::Result<()> {
         )
     );
 
-    fn log(severity: LogType, when: &str, status: &str, message_code: i64, extra: Option<String>) {
+    fn log(severity: LogType, when: &str, status: &str, message: &str) {
         log_base(
             severity,
             LOG_EMITTER_MAIN,
@@ -1049,13 +1012,13 @@ fn main() -> std::io::Result<()> {
             None,
             when,
             status,
-            message_code,
-            extra,
+            message,
         );
     }
 
     let (global, jobs) = exit_if_fails!(args.quiet, {
         let using = PathBuf::from(args.config);
+        let using = soft_canonicalize(&using).unwrap_or(using);
         log_base(
             LogType::Debug,
             LOG_EMITTER_CONFIG,
@@ -1065,10 +1028,8 @@ fn main() -> std::io::Result<()> {
             None,
             LOG_WHEN_INIT,
             LOG_STATUS_MSG,
-            ERR_CODE_NONE,
-            None,
+            &format!("reading configuration from `{}`", using.to_string_lossy()),
         );
-        let using = soft_canonicalize(&using).unwrap_or(using);
         extract_config(&using)
     });
 
@@ -1091,8 +1052,7 @@ fn main() -> std::io::Result<()> {
             LogType::Error,
             LOG_WHEN_END,
             LOG_STATUS_FAIL,
-            ERR_CODE_GENERIC,
-            Some("part of the jobs did not complete successfully".to_string()),
+            "part of the jobs did not complete successfully",
         );
         // flush log to prevent output loss on shortcut exit
         handle.flush();
@@ -1102,8 +1062,7 @@ fn main() -> std::io::Result<()> {
             LogType::Debug,
             LOG_WHEN_END,
             LOG_STATUS_OK,
-            ERR_CODE_OK,
-            None,
+            RES_OK,
         );
         // handle.flush();
         Ok(())

@@ -106,78 +106,6 @@ fn log_format_colors(
     )
 }
 
-/// Transform an error code into a parsable string
-fn code_to_str_parsable(code: i64) -> &'static str {
-    match code {
-        ERR_CODE_OK => SMR_ERR_CODE_OK,
-        ERR_CODE_NONE => SMR_ERR_CODE_NONE,
-        ERR_CODE_GENERIC => SMR_ERR_CODE_GENERIC,
-        ERR_CODE_INVALID_CONFIG_FILE => SMR_ERR_CODE_INVALID_CONFIG_FILE,
-        ERR_CODE_TOO_MANY_REPLACEMENTS => SMR_ERR_CODE_TOO_MANY_REPLACEMENTS,
-        ERR_CODE_SOURCE_DEST_OVERLAP => SMR_ERR_CODE_SOURCE_DEST_OVERLAP,
-        ERR_CODE_LOCAL_VAR_UNDEFINED => SMR_ERR_CODE_LOCAL_VAR_UNDEFINED,
-        FOERR_GENERIC_FAILURE => SMR_ERR_CODE_GENERIC,
-        FOERR_DESTINATION_IS_ITSELF => SMR_FOERR_DESTINATION_IS_ITSELF,
-        FOERR_DESTINATION_IS_DIR => SMR_FOERR_DESTINATION_IS_DIR,
-        FOERR_DESTINATION_IS_SYMLINK => SMR_FOERR_DESTINATION_IS_SYMLINK,
-        FOERR_DESTINATION_IS_NEWER => SMR_FOERR_DESTINATION_IS_NEWER,
-        FOERR_DESTINATION_IS_IDENTICAL => SMR_FOERR_DESTINATION_IS_IDENTICAL,
-        FOERR_CANNOT_WRITE_DESTINATION => SMR_FOERR_CANNOT_WRITE_DESTINATION,
-        FOERR_DESTINATION_EXISTS => SMR_FOERR_DESTINATION_EXISTS,
-        FOERR_DESTINATION_NOT_ACCESSIBLE => SMR_FOERR_DESTINATION_NOT_ACCESSIBLE,
-        FOERR_CANNOT_CREATE_DIR => SMR_FOERR_CANNOT_CREATE_DIR,
-        FOERR_CANNOT_CREATE_FILE => SMR_FOERR_CANNOT_CREATE_FILE,
-        FOERR_SOURCE_NOT_EXISTS => SMR_FOERR_SOURCE_NOT_EXISTS,
-        FOERR_SOURCE_IS_DIR => SMR_FOERR_SOURCE_IS_DIR,
-        FOERR_SOURCE_IS_SYMLINK => SMR_FOERR_SOURCE_IS_SYMLINK,
-        FOERR_SOURCE_NOT_ACCESSIBLE => SMR_FOERR_SOURCE_NOT_ACCESSIBLE,
-        CJERR_GENERIC_FAILURE => SMR_ERR_CODE_GENERIC,
-        CJERR_DESTINATION_DIR_NOT_EXISTS => SMR_CJERR_DESTINATION_DIR_NOT_EXISTS,
-        CJERR_SOURCE_DIR_NOT_EXISTS => SMR_CJERR_SOURCE_DIR_NOT_EXISTS,
-        CJERR_NO_SOURCE_FILES => SMR_CJERR_NO_SOURCE_FILES,
-        CJERR_DESTINATION_NOT_DIR => SMR_CJERR_DESTINATION_NOT_DIR,
-        CJERR_CANNOT_DETERMINE_DESTFILE => SMR_CJERR_CANNOT_DETERMINE_DESTFILE,
-        CJERR_HALT_ON_ERROR => SMR_CJERR_HALT_ON_ERROR,
-        _ => SMR_ERR_CODE_GENERIC,
-    }
-}
-
-/// Transform an error code into a human readable string
-fn code_to_str_readable(code: i64) -> &'static str {
-    match code {
-        ERR_CODE_OK => SHR_ERR_CODE_OK,
-        ERR_CODE_NONE => SHR_ERR_CODE_NONE,
-        ERR_CODE_GENERIC => SHR_ERR_CODE_GENERIC,
-        ERR_CODE_INVALID_CONFIG_FILE => SHR_ERR_CODE_INVALID_CONFIG_FILE,
-        ERR_CODE_TOO_MANY_REPLACEMENTS => SHR_ERR_CODE_TOO_MANY_REPLACEMENTS,
-        ERR_CODE_SOURCE_DEST_OVERLAP => SHR_ERR_CODE_SOURCE_DEST_OVERLAP,
-        ERR_CODE_LOCAL_VAR_UNDEFINED => SHR_ERR_CODE_LOCAL_VAR_UNDEFINED,
-        FOERR_GENERIC_FAILURE => SHR_ERR_CODE_GENERIC,
-        FOERR_DESTINATION_IS_ITSELF => SHR_FOERR_DESTINATION_IS_ITSELF,
-        FOERR_DESTINATION_IS_DIR => SHR_FOERR_DESTINATION_IS_DIR,
-        FOERR_DESTINATION_IS_SYMLINK => SHR_FOERR_DESTINATION_IS_SYMLINK,
-        FOERR_DESTINATION_IS_NEWER => SHR_FOERR_DESTINATION_IS_NEWER,
-        FOERR_DESTINATION_IS_IDENTICAL => SHR_FOERR_DESTINATION_IS_IDENTICAL,
-        FOERR_CANNOT_WRITE_DESTINATION => SHR_FOERR_CANNOT_WRITE_DESTINATION,
-        FOERR_DESTINATION_EXISTS => SHR_FOERR_DESTINATION_EXISTS,
-        FOERR_DESTINATION_NOT_ACCESSIBLE => SHR_FOERR_DESTINATION_NOT_ACCESSIBLE,
-        FOERR_CANNOT_CREATE_DIR => SHR_FOERR_CANNOT_CREATE_DIR,
-        FOERR_CANNOT_CREATE_FILE => SHR_FOERR_CANNOT_CREATE_FILE,
-        FOERR_SOURCE_NOT_EXISTS => SHR_FOERR_SOURCE_NOT_EXISTS,
-        FOERR_SOURCE_IS_DIR => SHR_FOERR_SOURCE_IS_DIR,
-        FOERR_SOURCE_IS_SYMLINK => SHR_FOERR_SOURCE_IS_SYMLINK,
-        FOERR_SOURCE_NOT_ACCESSIBLE => SHR_FOERR_SOURCE_NOT_ACCESSIBLE,
-        CJERR_GENERIC_FAILURE => SHR_ERR_CODE_GENERIC,
-        CJERR_DESTINATION_DIR_NOT_EXISTS => SHR_CJERR_DESTINATION_DIR_NOT_EXISTS,
-        CJERR_SOURCE_DIR_NOT_EXISTS => SHR_CJERR_SOURCE_DIR_NOT_EXISTS,
-        CJERR_NO_SOURCE_FILES => SHR_CJERR_NO_SOURCE_FILES,
-        CJERR_DESTINATION_NOT_DIR => SHR_CJERR_DESTINATION_NOT_DIR,
-        CJERR_CANNOT_DETERMINE_DESTFILE => SHR_CJERR_CANNOT_DETERMINE_DESTFILE,
-        CJERR_HALT_ON_ERROR => SHR_CJERR_HALT_ON_ERROR,
-        _ => SHR_ERR_CODE_GENERIC,
-    }
-}
-
 /// Log levels (from most verbose to least)
 #[derive(ValueEnum, Copy, Clone, Debug, PartialEq, Eq)]
 pub enum LogType {
@@ -323,8 +251,7 @@ pub fn log(
     destination: Option<PathBuf>,
     when: &str,
     status: &str,
-    message_code: i64,
-    message_extra: Option<String>,
+    message: &str,
 ) {
     // we can afford to check that logging is consistent when debugging,
     // just to avoid surprises in release veersions: this might seem
@@ -383,11 +310,7 @@ pub fn log(
                 "when": when,
                 "status": status,
             }),
-            "message": json!({
-                "id": code_to_str_parsable(message_code),
-                "value": code_to_str_readable(message_code),
-                "extra": message_extra,
-            }),
+            "message": message,
         })
         .to_string()
     } else {
@@ -435,11 +358,6 @@ pub fn log(
                     format!("{action}")
                 }
             }
-        };
-        let message = if let Some(s) = message_extra {
-            format!("{} / {s}", code_to_str_readable(message_code))
-        } else {
-            format!("{}", code_to_str_readable(message_code))
         };
         format!("{emitter}{item_repr} {action_repr}: [{when}/{status}] {message}")
     };
