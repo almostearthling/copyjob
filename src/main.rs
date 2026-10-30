@@ -528,10 +528,10 @@ fn list_files_matching(
         .into_iter()
         // directories only: never prune the root, prune excluded subdirectories
         .filter_entry(|e| {
-            (follow_symlinks || !e.path_is_symlink())
-                && (e.depth() == 0
-                    || !e.file_type().is_dir()
-                    || !excludedir_match.is_match(&e.file_name().to_string_lossy()))
+            e.depth() == 0
+                || ((follow_symlinks || !e.path_is_symlink())
+                    && (!e.file_type().is_dir()
+                        || !excludedir_match.is_match(&e.file_name().to_string_lossy())))
         })
         // only pick items that are not an error
         .filter_map(|e| e.ok())

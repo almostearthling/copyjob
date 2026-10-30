@@ -199,8 +199,8 @@ pub fn copy_file(
                                     }
                                 } else {
                                     return Err(Error::new(
-                                        Kind::Failed,
-                                        ERR_CODE_GENERIC,
+                                        Kind::Unavailable,
+                                        FOERR_DESTINATION_NOT_ACCESSIBLE,
                                         &e.to_string(),
                                     ));
                                 }
@@ -237,7 +237,7 @@ pub fn copy_file(
                             )
                         } else {
                             Error::new(
-                                Kind::Unknown,
+                                Kind::Unavailable,
                                 FOERR_DESTINATION_NOT_ACCESSIBLE,
                                 &e.to_string(),
                             )
@@ -279,7 +279,7 @@ pub fn remove_file(
                         .map(|_| Outcome::Done)
                         .map_err(|e| {
                             Error::new(
-                                Kind::Failed,
+                                Kind::Unavailable,
                                 FOERR_DESTINATION_NOT_ACCESSIBLE,
                                 &e.to_string(),
                             )
