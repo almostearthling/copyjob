@@ -140,7 +140,11 @@ pub fn init(
     #[cfg(not(debug_assertions))]
     let logspec = format!("{APP_NAME}={level}");
     #[cfg(debug_assertions)]
-    let logspec = format!("{level}");
+    let logspec = if !logjson {
+        format!("{level}")
+    } else {
+        format!("{APP_NAME}={level}")
+    };
 
     let mut logger;
     logger = Logger::try_with_str(logspec);
@@ -211,14 +215,9 @@ pub fn init(
         }
     }
 
-
-    logger.unwrap().start()
-        .map_err(|_|
-            std::io::Error::new(
-                std::io::ErrorKind::Unsupported,
-                ERR_LOGGER_NOT_INITIALIZED,
-            )
-        )
+    logger.unwrap().start().map_err(|_| {
+        std::io::Error::new(std::io::ErrorKind::Unsupported, ERR_LOGGER_NOT_INITIALIZED)
+    })
 }
 
 /// Common log function. The parameters are granular in order to achieve
