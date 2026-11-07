@@ -47,7 +47,6 @@ pub const ERR_SOURCE_IS_SYMLINK: &str = "source file is a symbolic link";
 pub const ERR_SOURCE_NOT_ACCESSIBLE: &str = "source file is not accessible";
 pub const ERR_DESTINATION_DIR_NOT_EXISTS: &str = "destination directory does not exist";
 pub const ERR_SOURCE_DIR_NOT_EXISTS: &str = "source directory does not exist";
-pub const ERR_NO_SOURCE_FILES: &str = "no source files found";
 pub const ERR_DESTINATION_NOT_DIR: &str = "destination is not a directory";
 pub const ERR_CANNOT_DETERMINE_DESTFILE: &str = "cannot determine destination file";
 pub const ERR_HALT_ON_ERROR: &str = "ending job after error";
@@ -73,10 +72,5 @@ pub const LOG_STATUS_FAIL: &str = "FAIL";
 pub const LOG_STATUS_IND: &str = "IND";
 pub const LOG_STATUS_MSG: &str = "MSG";
 pub const LOG_STATUS_ERR: &str = "ERR";
-
-// file operation outcomes
-pub const OUTCOME_COPIED: &str = "copied";
-pub const OUTCOME_REMOVED: &str = "removed";
-pub const OUTCOME_SKIPPED: &str = "skipped";
 
 // end.

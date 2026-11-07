@@ -425,8 +425,12 @@ fn extract_config(config_file: &PathBuf) -> Result<(CopyJobGlobalConfig, Vec<Cop
                         cfg_bool(job_map, "halt_on_errors")?.unwrap_or(job.halt_on_errors);
 
                     // check for source and destination overlap
-                    let csrc = soft_canonicalize(&job.source_dir)?;
-                    let cdest = soft_canonicalize(&job.destination_dir)?;
+                    let mut csrc = soft_canonicalize(&job.source_dir)?;
+                    let mut cdest = soft_canonicalize(&job.destination_dir)?;
+                    if cfg!(windows) || cfg!(target_os = "macos") {
+                        csrc = PathBuf::from(csrc.as_os_str().to_ascii_lowercase());
+                        cdest = PathBuf::from(cdest.as_os_str().to_ascii_lowercase());
+                    }
                     if csrc.starts_with(&cdest) || cdest.starts_with(csrc) {
                         return Err(Error::new(
                             Kind::Unsupported,
@@ -652,20 +656,28 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             // is aborted; this is however unlikely, since source file
             // names are actually retrieved from the OS
             let destination = PathBuf::from(&job.destination_dir);
+
+            // an empty value here will cause `destfile_relative` to be
+            // empty in the first place and skip the copy, unless
             let srcfile_relative = PathBuf::from(&item)
                 .strip_prefix(&job.source_dir)
-                .map_err(|e| {
+                .unwrap_or(if job.halt_on_errors {
+                    Err(Error::new(
+                        Kind::Unknown,
+                        &format!("{ERR_CANNOT_DETERMINE_DESTFILE}"),
+                    ))?
+                } else {
                     log(
-                        LogType::Error,
+                        LogType::Warn,
                         LOG_ACTION_COPY,
                         Some(item.clone()),
                         Some(destination.clone()),
                         LOG_WHEN_PROC,
                         LOG_STATUS_ERR,
-                        ERR_CANNOT_DETERMINE_DESTFILE,
+                        "destination file name cannot be determined",
                     );
-                    Error::new(Kind::Unknown, &format!("{ERR_GENERIC} ({e})"))
-                })?
+                    &Path::new("")
+                })
                 .to_path_buf();
             let destfile_relative = if job.keep_structure {
                 srcfile_relative.clone()
@@ -698,10 +710,10 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                                 Some(destfile_relative.clone()),
                                 LOG_WHEN_PROC,
                                 LOG_STATUS_OK,
-                                OUTCOME_COPIED,
+                                "copied",
                             );
                         }
-                        Outcome::Skipped(_) => {
+                        Outcome::Skipped(why) => {
                             log(
                                 LogType::Info,
                                 LOG_ACTION_COPY,
@@ -709,7 +721,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                                 Some(destfile_relative.clone()),
                                 LOG_WHEN_PROC,
                                 LOG_STATUS_OK,
-                                OUTCOME_SKIPPED,
+                                &format!("skipped ({why})"),
                             );
                         }
                     },
@@ -813,10 +825,10 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                                 Some(rmfile_relative.clone()),
                                 LOG_WHEN_PROC,
                                 LOG_STATUS_OK,
-                                OUTCOME_REMOVED,
+                                "removed",
                             );
                         }
-                        Outcome::Skipped(_) => {
+                        Outcome::Skipped(why) => {
                             log(
                                 LogType::Info,
                                 LOG_ACTION_DEL,
@@ -824,7 +836,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                                 Some(rmfile_relative.clone()),
                                 LOG_WHEN_PROC,
                                 LOG_STATUS_OK,
-                                OUTCOME_SKIPPED,
+                                &format!("skipped ({why})"),
                             );
                         }
                     },
@@ -870,7 +882,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
         );
     } else {
         log(
-            LogType::Error,
+            LogType::Warn,
             LOG_ACTION_JOB,
             Some(job.source_dir.clone()),
             Some(job.destination_dir.clone()),
@@ -878,7 +890,6 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             LOG_STATUS_FAIL,
             "no files to copy",
         );
-        return Err(Error::new(Kind::Unavailable, ERR_NO_SOURCE_FILES));
     }
 
     Ok(())
@@ -1006,10 +1017,12 @@ fn main() -> std::io::Result<()> {
 
     // run all configured and active jobs, and halt on errors if instructed to
     let mut failed = false;
-    for job in jobs
-        .iter()
-        .filter(|j| global.active_jobs.contains(&j.job_name))
-    {
+    for jobname in global.active_jobs {
+        let job = jobs
+            .iter()
+            .filter(|j| j.job_name == jobname)
+            .next()
+            .unwrap();
         if run_job(job, args.dry_run).is_err() {
             failed = true;
             if global.halt_on_errors {

@@ -84,41 +84,29 @@ pub fn copy_file(
 ) -> Result<Outcome> {
     // first check that there is something to copy
     if !source.exists() {
-        return Err(Error::new(
-            Kind::Invalid,
-            ERR_SOURCE_NOT_EXISTS,
-        ));
+        return Err(Error::new(Kind::Invalid, ERR_SOURCE_NOT_EXISTS));
     }
     if source.is_symlink() && !follow_symlinks {
         return Ok(Outcome::Skipped(ERR_SOURCE_IS_SYMLINK.to_string()));
     }
     if source.is_dir() {
-        return Err(Error::new(
-            Kind::Invalid,
-            ERR_SOURCE_IS_DIR,
-        ));
+        return Err(Error::new(Kind::Invalid, ERR_SOURCE_IS_DIR));
     }
     if !source.is_file() {
-        return Err(Error::new(
-            Kind::Invalid,
-            ERR_SOURCE_NOT_ACCESSIBLE,
-        ));
+        return Err(Error::new(Kind::Invalid, ERR_SOURCE_NOT_ACCESSIBLE));
     }
 
     // a flag that keeps track of whether we are overwriting or not
     let mut overwriting = false;
 
-    // check source and destination metadata (and whether or not they exist)
     match metadata(&source) {
         Ok(s_stat) => {
             // first check that source <> destination
             if soft_canonicalize(source)? == soft_canonicalize(destination)? {
-                return Err(Error::new(
-                    Kind::Invalid,
-                    ERR_DESTINATION_IS_ITSELF,
-                ));
+                return Err(Error::new(Kind::Invalid, ERR_DESTINATION_IS_ITSELF));
             }
-            match symlink_metadata(&destination) {
+
+            match metadata(&destination) {
                 Ok(d_stat) => {
                     // if we are here, then the destination exists: check
                     // whether overwrite is false, compare s_stat, d_stat and
@@ -126,13 +114,15 @@ pub fn copy_file(
                     if !overwrite {
                         return Ok(Outcome::Skipped(ERR_DESTINATION_EXISTS.to_string()));
                     } else if d_stat.is_dir() {
-                        return Err(Error::new(
-                            Kind::Invalid,
-                            ERR_DESTINATION_IS_DIR,
-                        ));
-                    } else if d_stat.is_symlink() && !follow_symlinks {
-                        return Ok(Outcome::Skipped(ERR_DESTINATION_IS_SYMLINK.to_string()));
-                    }
+                        return Err(Error::new(Kind::Invalid, ERR_DESTINATION_IS_DIR));
+                    } else {
+                        if let Ok(d_stat) = symlink_metadata(&destination)
+                            && d_stat.is_symlink()
+                            && !follow_symlinks
+                        {
+                            return Ok(Outcome::Skipped(ERR_DESTINATION_IS_SYMLINK.to_string()));
+                        }
+                    };
 
                     if skip_newer && s_stat.modified()? <= d_stat.modified()? {
                         return Ok(Outcome::Skipped(ERR_DESTINATION_IS_NEWER.to_string()));
@@ -156,18 +146,12 @@ pub fn copy_file(
                         //       CANNOT_CREATE_DIR error is propagated
                         let mut destination_dir = PathBuf::from(&destination);
                         if !destination_dir.pop() {
-                            return Err(Error::new(
-                                Kind::Forbidden,
-                                ERR_CANNOT_CREATE_DIR,
-                            ));
+                            return Err(Error::new(Kind::Forbidden, ERR_CANNOT_CREATE_DIR));
                         }
                         match metadata(&destination_dir) {
                             Ok(d_dirdata) => {
                                 if !d_dirdata.is_dir() {
-                                    return Err(Error::new(
-                                        Kind::Forbidden,
-                                        ERR_CANNOT_CREATE_DIR,
-                                    ));
+                                    return Err(Error::new(Kind::Forbidden, ERR_CANNOT_CREATE_DIR));
                                 }
                             }
                             Err(e) => {
@@ -219,10 +203,7 @@ pub fn copy_file(
                     .map(|_| Outcome::Done)
                     .map_err(|e| {
                         if e.kind() == std::io::ErrorKind::PermissionDenied {
-                            Error::new(
-                                Kind::Forbidden,
-                                ERR_CANNOT_WRITE_DESTINATION,
-                            )
+                            Error::new(Kind::Forbidden, ERR_CANNOT_WRITE_DESTINATION)
                         } else {
                             Error::new(
                                 Kind::Unavailable,
@@ -252,10 +233,7 @@ pub fn remove_file(
         Ok(d_stat) => {
             // if we are here, then destination exists
             if d_stat.is_dir() {
-                Err(Error::new(
-                    Kind::Invalid,
-                    ERR_DESTINATION_IS_DIR,
-                ))
+                Err(Error::new(Kind::Invalid, ERR_DESTINATION_IS_DIR))
             } else if d_stat.is_symlink() && !follow_symlinks {
                 Ok(Outcome::Skipped(ERR_DESTINATION_IS_SYMLINK.to_string()))
             } else if trash_on_delete {
