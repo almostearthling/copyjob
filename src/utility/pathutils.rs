@@ -1,6 +1,6 @@
 //! Path management utilities
 
-use regex::Regex;
+use regex::{Regex, RegexBuilder};
 use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
@@ -48,72 +48,22 @@ lazy_static! {
 /// This makes variables and markers replacement easier, also offering a
 /// check utility to test whether or not all variables mentioned in the string
 /// are defined in the substitution map.
-///
-/// Note: it only works with strings, both standard ones (when uncommented) and
-/// OS strings, which can be converted to `PathBuf`.
 pub trait ReplaceVars: Sized {
     fn replace_start(&self, vars: &HashMap<Self, Self>) -> Result<Self>;
-    fn check_vars(&self, pattern: &Regex, vars: &HashMap<Self, Self>) -> bool;
+    fn check_vars(
+        &self,
+        pattern: &Regex,
+        vars: &HashMap<Self, Self>,
+        case_insensitive: bool,
+    ) -> bool;
     fn replace_vars(
         &self,
         pattern: &Regex,
         format: &str,
         vars: &HashMap<Self, Self>,
+        case_insensitive: bool,
     ) -> Result<Self>;
 }
-
-// impl ReplaceVars for String {
-//     fn replace_start(&self, vars: &HashMap<String, String>) -> Result<Self> {
-//         let mut s = String::from(self);
-//         for (k, v) in vars {
-//             if s.starts_with(k) {
-//                 s = s.replacen(k, v, 1);
-//                 break;
-//             }
-//         }
-//         Ok(s)
-//     }
-
-//     fn check_vars(&self, pattern: &Regex, vars: &HashMap<Self, Self>) -> bool {
-//         let s = self.as_str();
-//         pattern.captures_iter(s).all(|c| vars.contains_key(&c[1]))
-//     }
-
-//     fn replace_vars(
-//         &self,
-//         pattern: &Regex,
-//         format: &str,
-//         vars: &HashMap<String, String>,
-//     ) -> Result<Self> {
-//         let mut result = String::from(self);
-//         let mut cap: usize = 0;
-//         // mimick shell by replacing undefined variables with the empty string:
-//         // since the same function is used for both local and environment vars,
-//         // this represents a difference with the Python version, that considered
-//         // mentioning an undefined local variable a fatal error
-//         // WARNING: this actually assumes that the regular expression pattern
-//         //          "[%$]\{[a-zA-Z_][a-zA-Z0-9_]*\}" cannot appear in the source or
-//         //          the destination directory within job definitions
-//         while let Some(caps) = pattern.captures(result.as_str()) {
-//             let varname = caps.get(1).map_or("", |m| m.as_str());
-//             let occurrence = format.replace(FORMAT_SAFE_CHAR, varname);
-//             if let Some(replacement) = vars.get(varname) {
-//                 result = result.replace(&occurrence, replacement);
-//                 cap += 1;
-//                 if cap > MAX_REPLACE_ITERATIONS {
-//                     return Err(Error::new(
-//                         super::result::Kind::Failed,
-//                         ERR_CODE_TOO_MANY_REPLACEMENTS,
-//                         SHR_ERR_CODE_TOO_MANY_REPLACEMENTS,
-//                     ));
-//                 }
-//             } else {
-//                 result = result.replace(&occurrence, &String::from(""));
-//             }
-//         }
-//         Ok(result)
-//     }
-// }
 
 impl ReplaceVars for OsString {
     fn replace_start(&self, vars: &HashMap<OsString, OsString>) -> Result<OsString> {
@@ -137,8 +87,21 @@ impl ReplaceVars for OsString {
         Ok(s)
     }
 
-    fn check_vars(&self, pattern: &Regex, vars: &HashMap<Self, Self>) -> bool {
+    fn check_vars(
+        &self,
+        pattern: &Regex,
+        vars: &HashMap<Self, Self>,
+        case_insensitive: bool,
+    ) -> bool {
         let s = self.to_string_lossy();
+        let pattern = if case_insensitive {
+            RegexBuilder::new(pattern.as_str())
+                .case_insensitive(true)
+                .build()
+                .unwrap()
+        } else {
+            pattern.clone()
+        };
         pattern
             .captures_iter(&s)
             .all(|c| vars.contains_key(&OsString::from(&c[1])))
@@ -149,9 +112,35 @@ impl ReplaceVars for OsString {
         pattern: &Regex,
         format: &str,
         vars: &HashMap<OsString, OsString>,
+        case_insensitive: bool,
     ) -> Result<OsString> {
         let mut result = OsString::from(self);
         let mut cap: usize = 0;
+        let pattern = if case_insensitive {
+            RegexBuilder::new(pattern.as_str())
+                .case_insensitive(true)
+                .build()
+                .unwrap()
+        } else {
+            pattern.clone()
+        };
+
+        // we need a helper that finds an entry according to case sensitivity;
+        // note that this will find the first occurrence, if it exists, of a
+        // variable in the case insensitive branch: if there are two distinct
+        // entries with the same name apart from casing, the first one in the
+        // iterator is returned; if case insensitivity is only used for
+        // environment variables on Windows, this is the expected behavior
+        let find_entry = |hm: &HashMap<OsString, OsString>, key: &OsStr| {
+            if case_insensitive {
+                hm.iter()
+                    .find(|k| k.0.to_ascii_lowercase() == key.to_ascii_lowercase())
+                    .map(|c| c.1.clone())
+            } else {
+                hm.get(key).map(|x| x.clone())
+            }
+        };
+
         // mimick shell by replacing undefined variables with the empty string:
         // since the same function is used for both local and environment vars,
         // this represents a difference with the Python version, that considered
@@ -170,7 +159,7 @@ impl ReplaceVars for OsString {
             let varname = caps.get(1).map_or("", |m| m.as_str());
             let occurrence = format.replace(FORMAT_SAFE_CHAR, varname);
             let bs = result.as_os_str().as_encoded_bytes();
-            if let Some(replacement) = vars.get(&OsString::from(varname)) {
+            if let Some(replacement) = find_entry(vars, &OsString::from(varname)) {
                 let bs = bs.replace(
                     occurrence.as_bytes(),
                     replacement.as_os_str().as_encoded_bytes(),
@@ -267,11 +256,8 @@ pub fn interpolate_dir(
     // considered idiomatic that the environment variables evaluate to the
     // empty string (and it is not safe, but at least expected), variables
     // defined in the configuration file should be treated more strictly
-    if !OsString::from(raw).check_vars(&RE_VARMENTION_LOC, local_vars) {
-        Err(Error::new(
-            Kind::Unavailable,
-            ERR_LOCAL_VAR_UNDEFINED,
-        ))
+    if !OsString::from(raw).check_vars(&RE_VARMENTION_LOC, local_vars, true) {
+        Err(Error::new(Kind::Unavailable, ERR_LOCAL_VAR_UNDEFINED))
     } else {
         Ok(PathBuf::from({
             // note that we first replace the variables that have been defined in
@@ -287,6 +273,7 @@ pub fn interpolate_dir(
                         .iter()
                         .map(|(k, v)| (k.clone(), v.clone()))
                         .collect(),
+                    true,
                 )?
                 .replace_start(
                     &markers
@@ -301,6 +288,7 @@ pub fn interpolate_dir(
                         .iter()
                         .map(|(k, v)| (k.clone(), v.clone()))
                         .collect(),
+                    if cfg!(windows) { false } else { true },
                 )?
         }))
     }

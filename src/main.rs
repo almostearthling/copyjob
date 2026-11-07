@@ -80,19 +80,19 @@ const PATTERN_MATCH_NO_FILE: &str = r"^$";
 
 // Some constants used within the code
 lazy_static! {
-    // directory markers: any of the values in respective lists, when
-    // used in the source and destination directory specs, will expand
-    // into the appropriate fully qualified path, namely:
-    // - USER-HOME => $HOME / %USERPROFILE%
-    // - CONFIG-FILE-DIR => where the current config file is located
-
     static ref RE_VARNAME: Regex = Regex::new(r"^[a-zA-Z_][a-zA-Z0-9_]*$").unwrap();
     static ref RE_JOBNAME: Regex = Regex::new(r"^[a-zA-Z_][a-zA-Z0-9_]*$").unwrap();
 }
 
 // helper to convert a list of regexp patterns into a single ORed regexp
 fn combine_regexp_patterns(res: &[String]) -> String {
-    format!("({})", res.join("|"))
+    format!(
+        "({})",
+        res.into_iter()
+            .map(|x| format!("(?:{x})"))
+            .collect::<Vec<String>>()
+            .join("|")
+    )
 }
 
 /// Extract the configuration from a TOML file, given the file name and the
@@ -111,10 +111,7 @@ fn extract_config(config_file: &PathBuf) -> Result<(CopyJobGlobalConfig, Vec<Cop
     // check that a path is not empty or root
     fn check_empty_pathname(p: &Path) -> Result<&Path> {
         if p.as_os_str().is_empty() || p.parent().is_none() {
-            Err(Error::new(
-                Kind::Empty,
-                ERR_RESULTING_DIR_EMPTY,
-            ))
+            Err(Error::new(Kind::Empty, ERR_RESULTING_DIR_EMPTY))
         } else {
             Ok(p)
         }
@@ -125,9 +122,9 @@ fn extract_config(config_file: &PathBuf) -> Result<(CopyJobGlobalConfig, Vec<Cop
         active_jobs: Vec::new(),
         job_list: Vec::new(),
         variables: HashMap::new(),
-        recursive: false,
+        recursive: true,
         case_sensitive: true,
-        follow_symlinks: true,
+        follow_symlinks: false,
         overwrite: true,
         skip_newer: true,
         check_content: false,
@@ -575,10 +572,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             LOG_STATUS_ERR,
             ERR_SOURCE_DIR_NOT_EXISTS,
         );
-        return Err(Error::new(
-            Kind::Unavailable,
-            ERR_SOURCE_DIR_NOT_EXISTS,
-        ));
+        return Err(Error::new(Kind::Unavailable, ERR_SOURCE_DIR_NOT_EXISTS));
     }
     if job.destination_dir.exists() && !job.destination_dir.is_dir() {
         log(
@@ -590,10 +584,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             LOG_STATUS_ERR,
             ERR_DESTINATION_NOT_DIR,
         );
-        return Err(Error::new(
-            Kind::Unavailable,
-            ERR_DESTINATION_NOT_DIR,
-        ));
+        return Err(Error::new(Kind::Unavailable, ERR_DESTINATION_NOT_DIR));
     }
     if !job.destination_dir.is_dir() && !job.create_directories {
         log(
@@ -673,10 +664,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                         LOG_STATUS_ERR,
                         ERR_CANNOT_DETERMINE_DESTFILE,
                     );
-                    Error::new(
-                        Kind::Unknown,
-                        &format!("{ERR_GENERIC} ({e})"),
-                    )
+                    Error::new(Kind::Unknown, &format!("{ERR_GENERIC} ({e})"))
                 })?
                 .to_path_buf();
             let destfile_relative = if job.keep_structure {
@@ -750,10 +738,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                                 LOG_STATUS_ERR,
                                 &format!("job failed ({ERR_HALT_ON_ERROR})"),
                             );
-                            return Err(Error::new(
-                                Kind::Failed,
-                                ERR_HALT_ON_ERROR,
-                            ));
+                            return Err(Error::new(Kind::Failed, ERR_HALT_ON_ERROR));
                         };
                     }
                 };
@@ -781,10 +766,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                         LOG_STATUS_ERR,
                         &format!("job failed ({ERR_HALT_ON_ERROR})"),
                     );
-                    return Err(Error::new(
-                        Kind::Failed,
-                        ERR_HALT_ON_ERROR,
-                    ));
+                    return Err(Error::new(Kind::Failed, ERR_HALT_ON_ERROR));
                 }
             }
         }
@@ -814,10 +796,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                                 LOG_STATUS_ERR,
                                 ERR_CANNOT_DETERMINE_DESTFILE,
                             );
-                            Error::new(
-                                Kind::Unknown,
-                                &format!("{ERR_GENERIC} ({e})"),
-                            )
+                            Error::new(Kind::Unknown, &format!("{ERR_GENERIC} ({e})"))
                         })?
                         .to_path_buf()
                 } else {
@@ -874,10 +853,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                                 LOG_STATUS_ERR,
                                 &format!("job failed ({ERR_HALT_ON_ERROR})"),
                             );
-                            return Err(Error::new(
-                                Kind::Failed,
-                                ERR_HALT_ON_ERROR,
-                            ));
+                            return Err(Error::new(Kind::Failed, ERR_HALT_ON_ERROR));
                         };
                     }
                 }
@@ -890,9 +866,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             Some(job.destination_dir.clone()),
             LOG_WHEN_END,
             LOG_STATUS_OK,
-            &format!(
-                "copied {num_files_copied} files, deleted {num_files_deleted} files"
-            ),
+            &format!("copied {num_files_copied} files, deleted {num_files_deleted} files"),
         );
     } else {
         log(
@@ -904,10 +878,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             LOG_STATUS_FAIL,
             "no files to copy",
         );
-        return Err(Error::new(
-            Kind::Unavailable,
-            ERR_NO_SOURCE_FILES,
-        ));
+        return Err(Error::new(Kind::Unavailable, ERR_NO_SOURCE_FILES));
     }
 
     Ok(())
@@ -1058,12 +1029,7 @@ fn main() -> std::io::Result<()> {
         handle.flush();
         std::process::exit(2);
     } else {
-        log(
-            LogType::Debug,
-            LOG_WHEN_END,
-            LOG_STATUS_OK,
-            RES_OK,
-        );
+        log(LogType::Debug, LOG_WHEN_END, LOG_STATUS_OK, RES_OK);
         // handle.flush();
         Ok(())
     }
