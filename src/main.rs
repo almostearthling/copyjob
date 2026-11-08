@@ -536,6 +536,12 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
         );
     };
 
+    let severity_depends_on_halt = if job.halt_on_errors {
+        LogType::Error
+    } else {
+        LogType::Warn
+    };
+
     // when we delete files we must take care of case insensitive filesystems
     // (including macos, which is generally case insensitive)
     #[cfg(any(windows, target_os = "macos"))]
@@ -645,19 +651,11 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             let srcfile_relative = source.strip_prefix(&job.source_dir);
             if srcfile_relative.is_err() {
                 log(
-                    if job.halt_on_errors {
-                        LogType::Error
-                    } else {
-                        LogType::Warn
-                    },
+                    severity_depends_on_halt,
                     LOG_ACTION_COPY,
                     Some(item.clone()),
                     Some(destination.clone()),
-                    if job.halt_on_errors {
-                        LOG_WHEN_END
-                    } else {
-                        LOG_WHEN_PROC
-                    },
+                    LOG_WHEN_PROC,
                     LOG_STATUS_ERR,
                     "destination file name cannot be determined",
                 );
@@ -727,19 +725,11 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                     Err(e) => {
                         let msg = format!("copy failed ({e})");
                         log(
-                            if job.halt_on_errors {
-                                LogType::Error
-                            } else {
-                                LogType::Warn
-                            },
+                            severity_depends_on_halt,
                             LOG_ACTION_COPY,
                             Some(srcfile_relative.clone()),
                             Some(destfile_relative.clone()),
-                            if job.halt_on_errors {
-                                LOG_WHEN_END
-                            } else {
-                                LOG_WHEN_PROC
-                            },
+                            LOG_WHEN_PROC,
                             LOG_STATUS_ERR,
                             msg.as_str(),
                         );
@@ -759,19 +749,11 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                 };
             } else {
                 log(
-                    if job.halt_on_errors {
-                        LogType::Error
-                    } else {
-                        LogType::Warn
-                    },
+                    severity_depends_on_halt,
                     LOG_ACTION_COPY,
                     Some(srcfile_relative.clone()),
                     Some(PathBuf::from(STR_UNDEFINED_VALUE)),
-                    if job.halt_on_errors {
-                        LOG_WHEN_END
-                    } else {
-                        LOG_WHEN_PROC
-                    },
+                    LOG_WHEN_PROC,
                     LOG_STATUS_ERR,
                     "destination file name cannot be determined",
                 );
@@ -807,19 +789,11 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                         p.to_path_buf()
                     } else {
                         log(
-                            if job.halt_on_errors {
-                                LogType::Error
-                            } else {
-                                LogType::Warn
-                            },
+                            severity_depends_on_halt,
                             LOG_ACTION_DEL,
                             None,
                             Some(item.clone()),
-                            if job.halt_on_errors {
-                                LOG_WHEN_END
-                            } else {
-                                LOG_WHEN_PROC
-                            },
+                            LOG_WHEN_PROC,
                             LOG_STATUS_ERR,
                             "name of file to be removed cannot be determined",
                         );
@@ -870,19 +844,11 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                     Err(e) => {
                         let msg = format!("removal failed ({e})");
                         log(
-                            if job.halt_on_errors {
-                                LogType::Error
-                            } else {
-                                LogType::Warn
-                            },
+                            severity_depends_on_halt,
                             LOG_ACTION_DEL,
                             None,
                             Some(rmfile_relative.clone()),
-                            if job.halt_on_errors {
-                                LOG_WHEN_END
-                            } else {
-                                LOG_WHEN_PROC
-                            },
+                            LOG_WHEN_PROC,
                             LOG_STATUS_ERR,
                             msg.as_str(),
                         );
