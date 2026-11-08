@@ -88,11 +88,7 @@ pub struct Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.origin != Origin::Native {
-            write!(
-                f,
-                "{} ({}): {}",
-                self.kind, self.origin, self.message
-            )
+            write!(f, "{} ({}): {}", self.kind, self.origin, self.message)
         } else {
             write!(f, "{}: {}", self.kind, self.message)
         }
