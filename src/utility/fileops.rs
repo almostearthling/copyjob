@@ -146,6 +146,11 @@ pub fn copy_file(
                         if !destination_dir.pop() {
                             return Err(Error::new(Kind::Forbidden, ERR_CANNOT_CREATE_DIR));
                         }
+                        if let Ok(s_stat) = symlink_metadata(source) {
+                            if s_stat.is_symlink() && !follow_symlinks {
+                                return Err(Error::new(Kind::Invalid, ERR_DESTINATION_IS_SYMLINK));
+                            }
+                        }
                         match metadata(&destination_dir) {
                             Ok(d_dirdata) => {
                                 if !d_dirdata.is_dir() {
