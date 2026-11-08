@@ -134,10 +134,10 @@ impl ReplaceVars for OsString {
         let find_entry = |hm: &HashMap<OsString, OsString>, key: &OsStr| {
             if case_insensitive {
                 hm.iter()
-                    .find(|k| k.0.to_ascii_lowercase() == key.to_ascii_lowercase())
+                    .find(|k| k.0.eq_ignore_ascii_case(key))
                     .map(|c| c.1.clone())
             } else {
-                hm.get(key).map(|x| x.clone())
+                hm.get(key).cloned()
             }
         };
 
@@ -288,7 +288,7 @@ pub fn interpolate_dir(
                         .iter()
                         .map(|(k, v)| (k.clone(), v.clone()))
                         .collect(),
-                    if cfg!(windows) { false } else { true },
+                    !cfg!(windows),
                 )?
         }))
     }

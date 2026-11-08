@@ -1,8 +1,8 @@
 # copyjob.toml
-# Copy jobs 
+# Copy jobs
 
-# active jobs must be specified here: if this list is omitted or set
-# to the empty list, no job will be performed
+# active jobs must be specified here: if this list is set to the empty list,
+# no jobs will be performed
 active_jobs = [
     "Job1",
     "Job2",
@@ -11,10 +11,10 @@ active_jobs = [
 
 # defaults for flags (the following correspond to actual defaults):
 #
-# recursive = true ................ walk subdirectories
+# recursive = false ............... walk subdirectories
 # overwrite = true ................ overwrite existing files
 # skip_newer = true ............... skip if destination is more recent
-# check_content = false ........... check contents of files using MD5 hash
+# check_content = false ........... check contents of files using SHA-256 hashes
 # follow_symlinks = true .......... follow symbolic links
 # case_sensitive = true ........... treat patterns/filenames as case sensitive
 # create_directories = true ....... create directory structure if missing
@@ -45,7 +45,9 @@ trash_on_overwrite = false
 # (but not in patterns of any kind). If the variable VARNAME is defined,
 # every occurrence of %{VARNAME} in both the source and destination
 # directories in each jobs will be replaced by the value associated with
-# VARNAME.
+# VARNAME. Note that variables defined here cannot contain references to
+# other ones (environment variables can be mentioned, though) and a missing
+# variable referenced in one of the paths is a configuration error.
 [variables]
 DEST_BASE = '${HOME}/Documents/CopyJob'
 
@@ -64,8 +66,8 @@ DEST_BASE = '${HOME}/Documents/CopyJob'
 # * patterns_exclude: list of regexes identifying excluded file names
 # * patterns_exclude_dir: list of regexes identifying excluded directories
 #
-# the last parameter checks each segment in the path, including the common
-# prefix; the following substitutions are made in directory names:
+# the last parameter checks each segment in the path relative to the source;
+# the following substitutions are made in directory names:
 #
 # - ~/ at the beginning is replaced by user home directory
 # - @/ at the beginning is replaced by dirname of the .toml file
@@ -76,8 +78,8 @@ DEST_BASE = '${HOME}/Documents/CopyJob'
 # * %{varname} is replaced by a variable defined above in this file
 # * ${varname} is replaced by an environment variable
 #
-# note that a non-existing variable will be replaced by the empty string, in
-# a way similar to other environments such as shell scripts.
+# note that a non-existing environment variable will be replaced by the
+# empty string, similarly to what happens in most shells.
 
 [[job]]
 name = "Job1"

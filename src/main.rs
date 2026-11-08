@@ -88,7 +88,7 @@ lazy_static! {
 fn combine_regexp_patterns(res: &[String]) -> String {
     format!(
         "({})",
-        res.into_iter()
+        res.iter()
             .map(|x| format!("(?:{x})"))
             .collect::<Vec<String>>()
             .join("|")
@@ -205,7 +205,7 @@ fn extract_config(config_file: &PathBuf) -> Result<(CopyJobGlobalConfig, Vec<Cop
     }
 
     let mut sys_variables: HashMap<OsString, OsString> = HashMap::new();
-    for (var, value) in env::vars_os().into_iter() {
+    for (var, value) in env::vars_os() {
         sys_variables.insert(var, value);
     }
 
@@ -437,8 +437,8 @@ fn extract_config(config_file: &PathBuf) -> Result<(CopyJobGlobalConfig, Vec<Cop
                             &format!(
                                 "{}: `{}`, `{}`",
                                 ERR_SOURCE_DEST_OVERLAP,
-                                &job.source_dir.to_string_lossy(),
-                                &job.destination_dir.to_string_lossy(),
+                                job.source_dir.to_string_lossy(),
+                                job.destination_dir.to_string_lossy(),
                             ),
                         ));
                     }
@@ -447,19 +447,19 @@ fn extract_config(config_file: &PathBuf) -> Result<(CopyJobGlobalConfig, Vec<Cop
                     if Regex::new(&job.include_pattern).is_err() {
                         return Err(Error::new(
                             Kind::Failed,
-                            &format!("{ERR_INVALID_REGEX}: `{}`", &job.include_pattern,),
+                            &format!("{ERR_INVALID_REGEX}: `{}`", job.include_pattern,),
                         ));
                     }
                     if Regex::new(&job.exclude_pattern).is_err() {
                         return Err(Error::new(
                             Kind::Failed,
-                            &format!("{ERR_INVALID_REGEX}: `{}`", &job.exclude_pattern,),
+                            &format!("{ERR_INVALID_REGEX}: `{}`", job.exclude_pattern,),
                         ));
                     }
                     if Regex::new(&job.excludedir_pattern).is_err() {
                         return Err(Error::new(
                             Kind::Failed,
-                            &format!("{ERR_INVALID_REGEX}: `{}`", &job.excludedir_pattern,),
+                            &format!("{ERR_INVALID_REGEX}: `{}`", job.excludedir_pattern,),
                         ));
                     }
 
@@ -476,7 +476,7 @@ fn extract_config(config_file: &PathBuf) -> Result<(CopyJobGlobalConfig, Vec<Cop
     // check that all active jobs that have been listed are actually defined
     let cur_key = "active_jobs";
     for item in global_config.active_jobs.iter() {
-        if !global_config.job_list.contains(&item) {
+        if !global_config.job_list.contains(item) {
             return Err(error_invalid_config(cur_key));
         }
     }
@@ -657,15 +657,15 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             // names are actually retrieved from the OS
             let destination = PathBuf::from(&job.destination_dir);
 
-            // an empty value here will cause `destfile_relative` to be
-            // empty in the first place and skip the copy, unless
-            let srcfile_relative = PathBuf::from(&item)
-                .strip_prefix(&job.source_dir)
-                .unwrap_or(if job.halt_on_errors {
-                    Err(Error::new(
+            // an empty value here will skip the copy anyway
+            let source = item.to_path_buf();
+            let srcfile_relative = source.strip_prefix(&job.source_dir);
+            if srcfile_relative.is_err() {
+                if job.halt_on_errors {
+                    return Err(Error::new(
                         Kind::Unknown,
-                        &format!("{ERR_CANNOT_DETERMINE_DESTFILE}"),
-                    ))?
+                        ERR_CANNOT_DETERMINE_DESTFILE,
+                    ));
                 } else {
                     log(
                         LogType::Warn,
@@ -676,21 +676,23 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                         LOG_STATUS_ERR,
                         "destination file name cannot be determined",
                     );
-                    &Path::new("")
-                })
-                .to_path_buf();
+                    continue;
+                }
+            }
+            let srcfile_relative = srcfile_relative.unwrap().to_path_buf();
             let destfile_relative = if job.keep_structure {
                 srcfile_relative.clone()
             } else {
                 PathBuf::from(&item.file_name().unwrap_or(OsStr::new(""))).to_path_buf()
             };
-            if !destfile_relative.as_os_str().is_empty() {
+            if !srcfile_relative.as_os_str().is_empty() && !destfile_relative.as_os_str().is_empty()
+            {
                 let destfile_absolute = destination.join(&destfile_relative);
                 // now that the destination path is known, only retain in the
                 // list of files to delete the ones that are not our destfile
                 files_to_delete.retain(|f| cmp_fname(f) != cmp_fname(&destfile_absolute));
                 match copy_file(
-                    &item,
+                    item,
                     &destfile_absolute,
                     job.overwrite,
                     job.skip_newer,
@@ -814,7 +816,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                 } else {
                     PathBuf::from(&item.file_name().unwrap_or(OsStr::new(""))).to_path_buf()
                 };
-                match remove_file(&item, job.follow_symlinks, job.trash_on_delete, dry_run) {
+                match remove_file(item, job.follow_symlinks, job.trash_on_delete, dry_run) {
                     Ok(o) => match o {
                         Outcome::Done => {
                             num_files_deleted += 1;
@@ -970,18 +972,25 @@ struct Args {
 fn main() -> std::io::Result<()> {
     let args = Args::parse();
 
-    // configure the logger
+    // configure the logger, only if the `quiet` flag is not set or
+    // if we are logging to a file (the uninitialized logger should
+    // log nothing)
     let log_file_name = args.log;
     let handle = exit_if_fails!(
         args.quiet,
-        log_init(
-            args.log_level,
-            log_file_name,
-            args.log_append,
-            args.log_color,
-            args.log_plain,
-            args.log_json,
-        )
+        if !args.quiet || log_file_name.is_some() {
+            log_init(
+                args.log_level,
+                log_file_name,
+                args.log_append,
+                args.log_color,
+                args.log_plain,
+                args.log_json,
+            )
+            .map(Some)
+        } else {
+            Ok(None)
+        }
     );
 
     fn log(severity: LogType, when: &str, status: &str, message: &str) {
@@ -1012,17 +1021,27 @@ fn main() -> std::io::Result<()> {
             LOG_STATUS_MSG,
             &format!("reading configuration from `{}`", using.to_string_lossy()),
         );
-        extract_config(&using)
+        extract_config(&using).map_err(|e| {
+            log_base(
+                LogType::Error,
+                LOG_EMITTER_CONFIG,
+                None,
+                LOG_ACTION_OTHER,
+                Some(using.clone()),
+                None,
+                LOG_WHEN_END,
+                LOG_STATUS_MSG,
+                &format!("error reading configuration ({e})"),
+            );
+            e
+        })
     });
 
     // run all configured and active jobs, and halt on errors if instructed to
     let mut failed = false;
+    // a hashmap for `jobs` would be better
     for jobname in global.active_jobs {
-        let job = jobs
-            .iter()
-            .filter(|j| j.job_name == jobname)
-            .next()
-            .unwrap();
+        let job = jobs.iter().find(|j| j.job_name == jobname).unwrap();
         if run_job(job, args.dry_run).is_err() {
             failed = true;
             if global.halt_on_errors {
@@ -1039,7 +1058,9 @@ fn main() -> std::io::Result<()> {
             "part of the jobs did not complete successfully",
         );
         // flush log to prevent output loss on shortcut exit
-        handle.flush();
+        if let Some(handle) = handle {
+            handle.flush()
+        };
         std::process::exit(2);
     } else {
         log(LogType::Debug, LOG_WHEN_END, LOG_STATUS_OK, RES_OK);

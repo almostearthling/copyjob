@@ -141,7 +141,7 @@ pub fn init(
     let logspec = format!("{APP_NAME}={level}");
     #[cfg(debug_assertions)]
     let logspec = if !logjson {
-        format!("{level}")
+        level.to_string()
     } else {
         format!("{APP_NAME}={level}")
     };
@@ -152,11 +152,7 @@ pub fn init(
         Ok(l) => {
             if let Some(fname) = filename {
                 let log_format = {
-                    if logcolor {
-                        log_format_plain
-                    } else if logplain {
-                        log_format_plain
-                    } else if logjson {
+                    if logjson {
                         LOGGER_EMITS_JSON.store(true, Relaxed);
                         log_format_json
                     } else {
@@ -256,7 +252,7 @@ pub fn log(
     // just to avoid surprises in release veersions: this might seem
     // heavy but it doesn't even compile in release mode
     debug_assert!(
-        vec![
+        [
             LOG_EMITTER_MAIN,
             LOG_EMITTER_CONFIG,
             LOG_EMITTER_GLOBAL,
@@ -265,7 +261,7 @@ pub fn log(
         .contains(&emitter)
     );
     debug_assert!(
-        vec![
+        [
             LOG_ACTION_COPY,
             LOG_ACTION_DEL,
             LOG_ACTION_JOB,
@@ -273,11 +269,9 @@ pub fn log(
         ]
         .contains(&action)
     );
+    debug_assert!([LOG_WHEN_INIT, LOG_WHEN_START, LOG_WHEN_END, LOG_WHEN_PROC].contains(&when));
     debug_assert!(
-        vec![LOG_WHEN_INIT, LOG_WHEN_START, LOG_WHEN_END, LOG_WHEN_PROC,].contains(&when)
-    );
-    debug_assert!(
-        vec![
+        [
             LOG_STATUS_OK,
             LOG_STATUS_FAIL,
             LOG_STATUS_ERR,
@@ -354,7 +348,7 @@ pub fn log(
                 if emitter == LOG_EMITTER_CONFIG {
                     format!("CONFIG (using `{}`)", source.unwrap().to_string_lossy())
                 } else {
-                    format!("{action}")
+                    action.to_string()
                 }
             }
         };

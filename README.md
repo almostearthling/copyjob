@@ -7,7 +7,7 @@ Jobs are related to a source directory and a destination: it is possible to crea
 
 The file name patterns are specified as *regular expressions* in the TOML configuration file, as this gives more granularity while specifying what has to be chosen and what to skip, compared to the wildcard semantics found in most shells. Patterns are provided as lists of regular expression strings, so that matching any of the list items is considered a good match for the given condition.
 
-For a description of TOML as a configuration file language, see the language [specification](https://toml.io/), and for a description of regular expression syntax and semantics, see [Wikipedia](https://en.wikipedia.org/wiki/Regular_expression); there are many useful tutorial around about *RE*s, and also many syntax checkers and interactive tools to test patterns before using them in real life cases such as **copyjob** jobs.
+For a description of TOML as a configuration file language, see the language [specification](https://toml.io/), and for a description of regular expression syntax and semantics, see [Wikipedia](https://en.wikipedia.org/wiki/Regular_expression); there are many useful tutorials around about *RE*s, and also many syntax checkers and interactive tools to test patterns before using them in real life cases such as **copyjob** jobs.
 
 > [!CAUTION]
 > This software is in early development stage. It works as expected in the use cases that I have been able to experiment, but it can behave in unexpected ways in cases not covered by my own tests. It should not destroy any contents in the source directories, however files in destination directories may be overwritten or deleted without notice: use it with caution, possibly after a backup.

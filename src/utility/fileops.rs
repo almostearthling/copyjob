@@ -99,14 +99,14 @@ pub fn copy_file(
     // a flag that keeps track of whether we are overwriting or not
     let mut overwriting = false;
 
-    match metadata(&source) {
+    match metadata(source) {
         Ok(s_stat) => {
             // first check that source <> destination
             if soft_canonicalize(source)? == soft_canonicalize(destination)? {
                 return Err(Error::new(Kind::Invalid, ERR_DESTINATION_IS_ITSELF));
             }
 
-            match metadata(&destination) {
+            match metadata(destination) {
                 Ok(d_stat) => {
                     // if we are here, then the destination exists: check
                     // whether overwrite is false, compare s_stat, d_stat and
@@ -116,7 +116,7 @@ pub fn copy_file(
                     } else if d_stat.is_dir() {
                         return Err(Error::new(Kind::Invalid, ERR_DESTINATION_IS_DIR));
                     } else {
-                        if let Ok(d_stat) = symlink_metadata(&destination)
+                        if let Ok(d_stat) = symlink_metadata(destination)
                             && d_stat.is_symlink()
                             && !follow_symlinks
                         {
@@ -130,7 +130,7 @@ pub fn copy_file(
 
                     // only when asked perform content checking via SHA256
                     // and skip copy if the contents are the same
-                    if check_content && sha256_digest(&source)? == sha256_digest(&destination)? {
+                    if check_content && sha256_digest(source)? == sha256_digest(destination)? {
                         return Ok(Outcome::Skipped(ERR_DESTINATION_IS_IDENTICAL.to_string()));
                     }
 
@@ -142,8 +142,6 @@ pub fn copy_file(
                         // in case of error check whether or not the destination
                         // directory exists, and if not create it when instructed
                         // to do so
-                        // TODO: double check this part!!! If destdir is found a
-                        //       CANNOT_CREATE_DIR error is propagated
                         let mut destination_dir = PathBuf::from(&destination);
                         if !destination_dir.pop() {
                             return Err(Error::new(Kind::Forbidden, ERR_CANNOT_CREATE_DIR));
@@ -194,12 +192,12 @@ pub fn copy_file(
                 // and if we are actually overwriting the destination file with
                 // no opposing condition (file age, contents, accessibility, etc)
                 if overwriting && trash_on_overwrite {
-                    trash::delete(&destination)
+                    trash::delete(destination)
                         .map_err(|e| Error::new(Kind::Failed, &e.to_string()))?;
                 }
 
                 // actually copy the file using OS API
-                fs::copy(&source, &destination)
+                fs::copy(source, destination)
                     .map(|_| Outcome::Done)
                     .map_err(|e| {
                         if e.kind() == std::io::ErrorKind::PermissionDenied {
@@ -229,7 +227,7 @@ pub fn remove_file(
     trash_on_delete: bool,
     dry_run: bool,
 ) -> Result<Outcome> {
-    match symlink_metadata(&destination) {
+    match symlink_metadata(destination) {
         Ok(d_stat) => {
             // if we are here, then destination exists
             if d_stat.is_dir() {
@@ -238,7 +236,7 @@ pub fn remove_file(
                 Ok(Outcome::Skipped(ERR_DESTINATION_IS_SYMLINK.to_string()))
             } else if trash_on_delete {
                 if !dry_run {
-                    trash::delete(&destination)
+                    trash::delete(destination)
                         .map(|_| Outcome::Done)
                         .map_err(|e| {
                             Error::new(
