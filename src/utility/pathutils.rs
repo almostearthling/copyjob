@@ -273,7 +273,7 @@ pub fn interpolate_dir(
                         .iter()
                         .map(|(k, v)| (k.clone(), v.clone()))
                         .collect(),
-                    true,
+                    false,
                 )?
                 .replace_start(
                     &markers
@@ -288,7 +288,7 @@ pub fn interpolate_dir(
                         .iter()
                         .map(|(k, v)| (k.clone(), v.clone()))
                         .collect(),
-                    !cfg!(windows),
+                    cfg!(windows),
                 )?
         }))
     }

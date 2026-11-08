@@ -104,7 +104,7 @@ fn extract_config(config_file: &PathBuf) -> Result<(CopyJobGlobalConfig, Vec<Cop
     fn error_invalid_config(key: &str) -> Error {
         Error::new(
             Kind::Invalid,
-            format!("{}:{key}", ERR_INVALID_CONFIG).as_str(),
+            format!("{ERR_INVALID_CONFIG}:{key}").as_str(),
         )
     }
 
@@ -443,26 +443,6 @@ fn extract_config(config_file: &PathBuf) -> Result<(CopyJobGlobalConfig, Vec<Cop
                         ));
                     }
 
-                    // check for correct regular expressions
-                    if Regex::new(&job.include_pattern).is_err() {
-                        return Err(Error::new(
-                            Kind::Failed,
-                            &format!("{ERR_INVALID_REGEX}: `{}`", job.include_pattern,),
-                        ));
-                    }
-                    if Regex::new(&job.exclude_pattern).is_err() {
-                        return Err(Error::new(
-                            Kind::Failed,
-                            &format!("{ERR_INVALID_REGEX}: `{}`", job.exclude_pattern,),
-                        ));
-                    }
-                    if Regex::new(&job.excludedir_pattern).is_err() {
-                        return Err(Error::new(
-                            Kind::Failed,
-                            &format!("{ERR_INVALID_REGEX}: `{}`", job.excludedir_pattern,),
-                        ));
-                    }
-
                     // name must be non empty: this is already checked by the
                     // `cfg_mandatory!()` call and the associated Regex
                     global_config.job_list.push(job.job_name.clone());
@@ -477,7 +457,7 @@ fn extract_config(config_file: &PathBuf) -> Result<(CopyJobGlobalConfig, Vec<Cop
     let cur_key = "active_jobs";
     for item in global_config.active_jobs.iter() {
         if !global_config.job_list.contains(item) {
-            return Err(error_invalid_config(cur_key));
+            return Err(Error::new(Kind::Invalid, &format!("{ERR_INVALID_CFG_ENTRY}:{cur_key} (job `{item}` not defined)")));
         }
     }
 
@@ -662,10 +642,16 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             let srcfile_relative = source.strip_prefix(&job.source_dir);
             if srcfile_relative.is_err() {
                 if job.halt_on_errors {
-                    return Err(Error::new(
-                        Kind::Unknown,
-                        ERR_CANNOT_DETERMINE_DESTFILE,
-                    ));
+                    log(
+                        LogType::Error,
+                        LOG_ACTION_COPY,
+                        Some(item.clone()),
+                        Some(destination.clone()),
+                        LOG_WHEN_PROC,
+                        LOG_STATUS_ERR,
+                        "destination file name cannot be determined",
+                    );
+                    return Err(Error::new(Kind::Unknown, ERR_CANNOT_DETERMINE_DESTFILE));
                 } else {
                     log(
                         LogType::Warn,
@@ -798,21 +784,28 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             );
             for item in &files_to_delete {
                 let rmfile_relative = if job.keep_structure {
-                    PathBuf::from(&item)
-                        .strip_prefix(&job.destination_dir)
-                        .map_err(|e| {
-                            log(
-                                LogType::Error,
-                                LOG_ACTION_DEL,
-                                None,
-                                Some(item.clone()),
-                                LOG_WHEN_PROC,
-                                LOG_STATUS_ERR,
-                                ERR_CANNOT_DETERMINE_DESTFILE,
-                            );
-                            Error::new(Kind::Unknown, &format!("{ERR_GENERIC} ({e})"))
-                        })?
-                        .to_path_buf()
+                    if let Ok(p) = PathBuf::from(&item).strip_prefix(&job.destination_dir) {
+                        p.to_path_buf()
+                    } else {
+                        log(
+                            if job.halt_on_errors {
+                                LogType::Error
+                            } else {
+                                LogType::Warn
+                            },
+                            LOG_ACTION_DEL,
+                            None,
+                            Some(item.clone()),
+                            LOG_WHEN_PROC,
+                            LOG_STATUS_ERR,
+                            "name of file to be removed cannot be determined",
+                        );
+                        if job.halt_on_errors {
+                            return Err(Error::new(Kind::Unknown, ERR_CANNOT_DETERMINE_DESTFILE));
+                        } else {
+                            continue;
+                        }
+                    }
                 } else {
                     PathBuf::from(&item.file_name().unwrap_or(OsStr::new(""))).to_path_buf()
                 };
@@ -889,7 +882,7 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             Some(job.source_dir.clone()),
             Some(job.destination_dir.clone()),
             LOG_WHEN_END,
-            LOG_STATUS_FAIL,
+            LOG_STATUS_IND,
             "no files to copy",
         );
     }
@@ -938,7 +931,6 @@ struct Args {
         long,
         value_name = "LEVEL",
         default_value_t = LogType::Warn,
-        default_missing_value = "warn",
         value_enum,
     )]
     log_level: LogType,
@@ -1030,7 +1022,7 @@ fn main() -> std::io::Result<()> {
                 Some(using.clone()),
                 None,
                 LOG_WHEN_END,
-                LOG_STATUS_MSG,
+                LOG_STATUS_ERR,
                 &format!("error reading configuration ({e})"),
             );
             e

@@ -2,7 +2,8 @@
 # Copy jobs
 
 # active jobs must be specified here: if this list is set to the empty list,
-# no jobs will be performed
+# no jobs will be performed. This list also determines the order in which jobs
+# are run.
 active_jobs = [
     "Job1",
     "Job2",
@@ -11,11 +12,11 @@ active_jobs = [
 
 # defaults for flags (the following correspond to actual defaults):
 #
-# recursive = false ............... walk subdirectories
+# recursive = true ................ walk subdirectories
 # overwrite = true ................ overwrite existing files
 # skip_newer = true ............... skip if destination is more recent
 # check_content = false ........... check contents of files using SHA-256 hashes
-# follow_symlinks = true .......... follow symbolic links
+# follow_symlinks = false ......... follow symbolic links
 # case_sensitive = true ........... treat patterns/filenames as case sensitive
 # create_directories = true ....... create directory structure if missing
 # keep_structure = true ........... keep subdirectory structure, otherwise flat
