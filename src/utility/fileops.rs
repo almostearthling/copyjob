@@ -148,7 +148,7 @@ pub fn copy_file(
                         }
                         if let Ok(d_stat) = symlink_metadata(destination) {
                             if d_stat.is_symlink() && !follow_symlinks {
-                                return Err(Error::new(Kind::Invalid, ERR_DESTINATION_IS_SYMLINK));
+                                return Ok(Outcome::Skipped(ERR_DESTINATION_IS_SYMLINK.to_string()));
                             }
                         }
                         match metadata(&destination_dir) {
