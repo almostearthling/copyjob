@@ -457,7 +457,10 @@ fn extract_config(config_file: &PathBuf) -> Result<(CopyJobGlobalConfig, Vec<Cop
     let cur_key = "active_jobs";
     for item in global_config.active_jobs.iter() {
         if !global_config.job_list.contains(item) {
-            return Err(Error::new(Kind::Invalid, &format!("{ERR_INVALID_CFG_ENTRY}:{cur_key} (job `{item}` not defined)")));
+            return Err(Error::new(
+                Kind::Invalid,
+                &format!("{ERR_INVALID_CFG_ENTRY}:{cur_key} (job `{item}` not defined)"),
+            ));
         }
     }
 
@@ -641,27 +644,35 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
             let source = item.to_path_buf();
             let srcfile_relative = source.strip_prefix(&job.source_dir);
             if srcfile_relative.is_err() {
+                log(
+                    if job.halt_on_errors {
+                        LogType::Error
+                    } else {
+                        LogType::Warn
+                    },
+                    LOG_ACTION_COPY,
+                    Some(item.clone()),
+                    Some(destination.clone()),
+                    if job.halt_on_errors {
+                        LOG_WHEN_END
+                    } else {
+                        LOG_WHEN_PROC
+                    },
+                    LOG_STATUS_ERR,
+                    "destination file name cannot be determined",
+                );
                 if job.halt_on_errors {
                     log(
                         LogType::Error,
                         LOG_ACTION_COPY,
                         Some(item.clone()),
                         Some(destination.clone()),
-                        LOG_WHEN_PROC,
+                        LOG_WHEN_END,
                         LOG_STATUS_ERR,
-                        "destination file name cannot be determined",
+                        &format!("job failed ({ERR_HALT_ON_ERROR})"),
                     );
                     return Err(Error::new(Kind::Unknown, ERR_CANNOT_DETERMINE_DESTFILE));
                 } else {
-                    log(
-                        LogType::Warn,
-                        LOG_ACTION_COPY,
-                        Some(item.clone()),
-                        Some(destination.clone()),
-                        LOG_WHEN_PROC,
-                        LOG_STATUS_ERR,
-                        "destination file name cannot be determined",
-                    );
                     continue;
                 }
             }
@@ -724,7 +735,11 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                             LOG_ACTION_COPY,
                             Some(srcfile_relative.clone()),
                             Some(destfile_relative.clone()),
-                            LOG_WHEN_PROC,
+                            if job.halt_on_errors {
+                                LOG_WHEN_END
+                            } else {
+                                LOG_WHEN_PROC
+                            },
                             LOG_STATUS_ERR,
                             msg.as_str(),
                         );
@@ -752,9 +767,13 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                     LOG_ACTION_COPY,
                     Some(srcfile_relative.clone()),
                     Some(PathBuf::from(STR_UNDEFINED_VALUE)),
-                    LOG_WHEN_PROC,
+                    if job.halt_on_errors {
+                        LOG_WHEN_END
+                    } else {
+                        LOG_WHEN_PROC
+                    },
                     LOG_STATUS_ERR,
-                    ERR_CANNOT_DETERMINE_DESTFILE,
+                    "destination file name cannot be determined",
                 );
                 if job.halt_on_errors {
                     log(
@@ -796,11 +815,24 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                             LOG_ACTION_DEL,
                             None,
                             Some(item.clone()),
-                            LOG_WHEN_PROC,
+                            if job.halt_on_errors {
+                                LOG_WHEN_END
+                            } else {
+                                LOG_WHEN_PROC
+                            },
                             LOG_STATUS_ERR,
                             "name of file to be removed cannot be determined",
                         );
                         if job.halt_on_errors {
+                            log(
+                                LogType::Error,
+                                LOG_ACTION_DEL,
+                                None,
+                                Some(item.clone()),
+                                LOG_WHEN_END,
+                                LOG_STATUS_ERR,
+                                &format!("job failed ({ERR_HALT_ON_ERROR})"),
+                            );
                             return Err(Error::new(Kind::Unknown, ERR_CANNOT_DETERMINE_DESTFILE));
                         } else {
                             continue;
@@ -846,7 +878,11 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                             LOG_ACTION_DEL,
                             None,
                             Some(rmfile_relative.clone()),
-                            LOG_WHEN_PROC,
+                            if job.halt_on_errors {
+                                LOG_WHEN_END
+                            } else {
+                                LOG_WHEN_PROC
+                            },
                             LOG_STATUS_ERR,
                             msg.as_str(),
                         );

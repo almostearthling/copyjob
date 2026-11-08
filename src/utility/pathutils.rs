@@ -256,7 +256,7 @@ pub fn interpolate_dir(
     // considered idiomatic that the environment variables evaluate to the
     // empty string (and it is not safe, but at least expected), variables
     // defined in the configuration file should be treated more strictly
-    if !OsString::from(raw).check_vars(&RE_VARMENTION_LOC, local_vars, true) {
+    if !OsString::from(raw).check_vars(&RE_VARMENTION_LOC, local_vars, false) {
         Err(Error::new(Kind::Unavailable, ERR_LOCAL_VAR_UNDEFINED))
     } else {
         Ok(PathBuf::from({
