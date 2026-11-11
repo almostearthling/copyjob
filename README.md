@@ -18,7 +18,7 @@ For a description of TOML as a configuration file language, see the language [sp
 **copyjob** can be invoked from the command line. By typing `copyjob --help` at the prompt, the utility will display a brief usage message:
 
 ```text
-Perform complex and selective copy operations according to criteria provided in a TOML file
+Perform complex file copy operations
 
 Usage: copyjob [OPTIONS] <CONFIG>
 
@@ -26,20 +26,27 @@ Arguments:
   <CONFIG>  path to configuration file
 
 Options:
-  -q, --quiet            suppress all output
-  -p, --parsable-output  generate machine readable output (JSON)
-  -D, --dry-run          just write output without modifying the file system
-  -h, --help             Print help
-  -V, --version          Print version
+  -q, --quiet              Suppress all output
+  -l, --log <LOGFILE>      Specify the log file
+  -L, --log-level <LEVEL>  Specify the log level [default: warn] [possible values: trace, debug, info, warn, error]
+  -a, --log-append         Append to an existing log file if found
+  -P, --log-plain          No colors when logging (default when logging to file)
+  -C, --log-color          Use colors when logging (default, ignored when logging to file)
+  -J, --log-json           Use JSON format for logging
+  -D, --dry-run            Just log what the actual command would do, without modifying the file system
+  -h, --help               Print help
+  -V, --version            Print version
 ```
 
-The command called with `--quiet` or `-q` as parameter, followed by the configuration file path, will only exit with an *error* value in case of unrecoverable errors, and when invoked with the `--parsable-output` or `-p` parameter will produce output in JSON format, that would be easier for another program to parse, although more difficult for a human to read. The basic invocation is
+The command called with `--quiet` or `-q` as parameter, followed by the configuration file path, will only exit with an *error* value in case of unrecoverable errors, and when invoked with the `--log-json` or `-J` parameter will produce output in JSON format, that would be easier for another program to parse, although more difficult for a human to read. In order to test a configuration and see what modifications it would produce, without actually touching the fiule system, the `--dry-run` (or its `-D` short form) can be used.
+
+The basic invocation is
 
 ```sh
 copyjob path/to/config.toml
 ```
 
-which will read the file `path/to/config.toml` and perform the jobs that the user defined and activated there, producing a readable (yet messy) output.
+which will read the file `path/to/config.toml` and perform the jobs that the user defined and activated there, producing a readable output when any warning or error arises. To get more (or less) detail in the output, a higher (or lower) log level can be chosen; levels are `trace`, `debug`, `info`, `warn`, and `error`, in order of verbosity.
 
 
 ## Configuration
@@ -117,7 +124,7 @@ Most parameters can be defined at the global level in the configuration file, an
 | `overwrite`              | true        | overwrite existing files                                |
 | `skip_newer`             | true        | skip if destination is more recent                      |
 | `check_content`          | false       | check contents of files using MD5 hash                  |
-| `follow_symlinks`        | true        | follow symbolic links                                   |
+| `follow_symlinks`        | false       | follow symbolic links                                   |
 | `case_sensitive`         | true        | treat patterns/filenames as case sensitive              |
 | `create_directories`     | true        | create directory structure if missing                   |
 | `keep_structure`         | true        | keep subdirectory structure, otherwise flat             |
@@ -172,7 +179,7 @@ Each job is introduced by the string `[[job]]` on a single line (the double squa
 | `overwrite`              | true        | overwrite existing files                              |
 | `skip_newer`             | true        | skip if destination is more recent                    |
 | `check_content`          | false       | check contents of files using MD5 hash                |
-| `follow_symlinks`        | true        | follow symbolic links                                 |
+| `follow_symlinks`        | false       | follow symbolic links                                 |
 | `case_sensitive`         | true        | treat patterns/filenames as case sensitive            |
 | `create_directories`     | true        | create directory structure if missing                 |
 | `keep_structure`         | true        | keep subdirectory structure, otherwise flat           |
@@ -216,16 +223,26 @@ In the `source` and `destination` directory specifications, two predefined marke
 On Windows the slash can be replaced by a backslash.
 
 
+## Known problems
+
+There are some edge cases in which **copyjob** might behave in a different way than one could expect, especially when handling symbolic links. This is the reason why the `follow_symlinks` configuration parameter is set to *false* by default both at global and at job level, and the suggestion is to avoid following symlinks - unless the destination directory is *entirely* managed by **copyjob**. **copyjob**, in fact, will never create links in the destination folder, it just copies contents. If the destination directory contains links:
+
+* if `follow_symlinks` is *true* and a link points to anything (especially a directory) outside the destination tree, the copy and delete operations will be performed at the actual, linked, destination - as long as the user invoking the command has the permissions to do this;
+* if `follow_symlinks` is *false* and a link is found in the destination that is eligible for overwriting, the link itself can be overwritten by an actual file.
+
+In any case, if the destination is not managed exclusively by **copyjob**, the suggestion is to keep `follow_symlinks` unset, and to avoid to use directories containing symbolic links as targets for the utility.
+
+
 ## Output of **copyjob**
 
 **copyjob** produces a quite verbose output, that can be used for logging. For each job, summary lines will be written to the console reporting the number of files to copy, the number of files that might have to be deleted (that is, whose names in the destination directory match the source patterns), and at the end it will report the numbers of actually copied and/or deleted files. While executing the job, **copyjob** reports each attempted copy operation mentioning the full paths of the source and the destination files, as well as whether or not the copy operation was successful.
 
-The output can be somewhat confusing, and it might be useful to redirect it to a file in complex or long tasks. Errors are written to *stderr*, so it is probably appropriate to redirect *stderr* to *stdout* for logging. A compact JSON output can be produced, easier to parse for other programs: although **copyjob** is suitable to be used directly from the CLI, it can be wrapped into a more user-friendly tool, be it still CLI oriented or providing a GUI.
+The output can be somewhat confusing, and it might be useful to redirect it to a file in complex or long tasks. Fatal errors (actually regarding configuration) are written to *stderr*, so it is probably appropriate to redirect *stderr* to *stdout* for logging. A compact JSON output can be produced, easier to parse for other programs: although **copyjob** is suitable to be used directly from the CLI, it can be wrapped into a more user-friendly tool, be it still CLI oriented or providing a GUI.
 
 
 ## A possible use scenario
 
-The way I use **copyjob** is, for some of the subdirectories in a certain tree, to perform some jobs which are configured on a per-directory basis. In order to do this, I simply edit a *copyjob_XXXX.toml* file in each directory where I want **copyjob** to operate, and then invoke the utility on each of these files: thanks to the `@/` marker it is possible to construct jobs that are applied to the directory where the configuration file is found, in a generic way that allows to reuse most of the configuration when the actions to perform are similar. **copyjob** is called on each of these files using the `find` command on Unix and the `Get-ChildItem . -Recurse` Powershell cmdlet on Windows, as follows:
+The way I use **copyjob** is, for some of the subdirectories in a certain tree, to perform some jobs which are configured on a per-directory basis. In order to do this, I simply create a dedicated *copyjob_XXXX.toml* file in each directory where I want **copyjob** to operate on, and then invoke the utility on each of these files: thanks to the `@/` marker it is possible to define jobs that are applied to the directory where the configuration file is found, in a generic way that allows to reuse most of the configuration when the actions to perform are similar. **copyjob** is called on each of these files using the `find` command on Unix and the `Get-ChildItem . -Recurse` Powershell cmdlet on Windows, as follows:
 
 * **on Unix**
 
@@ -242,9 +259,9 @@ The way I use **copyjob** is, for some of the subdirectories in a certain tree, 
 You might want to redirect *stdout* and *stderr* to a log file, especially if these actions are automated.
 
 
-## My stance on LLMs and AI
+## Use of LLMs and AI in this project
 
-I am using this little project to experiment cooperation with an LLM: at the moment the cooperation consists in code review, bug hunting, and requests of suggestions on how to refactor the code itself and how to fix possible bugs. This kind of "coworking" significantly changed the codebase in a way that I am appreciating, while the code is still edited, amended, checked and understood by humans (me, in fact). I am investigating a constructive way to use LLMs, and this seems to hit the spot at least for now: although skeptical on many points, I still think that generative AI can help in development, even though I am also convinced that, as advertised in most AI chat applications, all output produced by such tools deserves, when it does not just *need*, a thorough review.
+I am using this little project to experiment LLM-based code review: no code has been actually written or explicitly proposed by a LLM. LLMs (mostly Anthropic's *Claude Code*) just reviewed the codebase, catching issues except the ones that they have been told to leave alone, either because I didn't consider them erratic behaviours or because I preferred to defer a solution, or a choice on how to handle them.
 
 
 ## License
