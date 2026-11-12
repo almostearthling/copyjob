@@ -235,7 +235,6 @@ fn extract_config(config_file: &PathBuf) -> Result<(CopyJobGlobalConfig, Vec<Cop
                 }
                 // reject non-strings and strings that mention other local
                 // variables to avoid circular references.
-                // TODO: this must be documented
                 if !item.is_str() || RE_VARMENTION_LOC.find(item.as_str().unwrap()).is_some() {
                     return Err(error_invalid_config(cur_key));
                 }
