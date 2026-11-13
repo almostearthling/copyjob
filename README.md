@@ -246,9 +246,9 @@ Although this cannot be considered a problem, it is worth mentioning that **copy
 
 ## Output of **copyjob**
 
-**copyjob** produces a quite verbose output, that can be used for logging. For each job, summary lines will be written to the console reporting the number of files to copy, the number of files that might have to be deleted (that is, whose names in the destination directory match the source patterns), and at the end it will report the numbers of actually copied and/or deleted files. While executing the job, **copyjob** reports each attempted copy operation mentioning the full paths of the source and the destination files, as well as whether or not the copy operation was successful.
+**copyjob** can produce a quite verbose output when the logging level is set to either *debug* or *trace*. For each job, summary lines will be written to the console reporting the number of files to copy, the number of files that might have to be deleted (that is, whose names in the destination directory match the source patterns), and at the end it will report the numbers of actually copied and/or deleted files. While executing the job, **copyjob** reports each attempted copy operation mentioning both the source and the destination files, as well as whether or not the copy operation was successful.
 
-The output can be somewhat confusing, and it might be useful to redirect it to a file in complex or long tasks. Fatal errors (actually regarding configuration) are written to *stderr*, so it is probably appropriate to redirect *stderr* to *stdout* for logging. A compact JSON output can be produced, easier to parse for other programs: although **copyjob** is suitable to be used directly from the CLI, it can be wrapped into a more user-friendly tool, be it still CLI oriented or providing a GUI.
+A compact JSON output can be produced, easier to parse for a possible frontend.
 
 
 ## A possible use scenario
