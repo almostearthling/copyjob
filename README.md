@@ -1,16 +1,19 @@
 # **copyjob**
 
 
-This is a small utility that can perform complex file copy operations according to directives provided in a TOML configuration file. Each configuration file can contain instructions for several copy operations, and the parameters may vary for each operation defined in the configuration: such parameters can be defined globally in the TOML file and overridden partially or totally in each job.
+This is a small utility that can perform selective file copy operations according to directives provided in a TOML configuration file. Each configuration file can contain instructions for several copy operations, and the parameters may vary for each operation defined in the configuration: such parameters can be defined globally in the TOML file and overridden partially or totally in each job.
 
-Jobs are related to a source directory and a destination: it is possible to create the destination path if it doesn't exist, and to recreate totally or partially the source structure at the destination. Jobs can be instructed to selectively copy files, according to criteria specified in the configuration: such criteria include file name patterns for both inclusion and exclusion, checking file age and/or contents compared to a possibly existing destination file, and subdirectories to skip. A job can also remove files existing in the destination directory if they match the naming criteria given for the source and are not present in the source directory.
+> [!WARNING]
+> **BREAKING CHANGES:** this version of **copyjob** introduces some breaking changes, both in the output format (which now is more similar to a log file, unless JSON is chosen as output format) and in the behaviour of the utility itself. Some CLI parameters are different from the previous versions, so scripts using **copyjob** should be adjusted consequently; and although the configuration format is unchanged, some configurations that could have been accepted in previous versions are now considered errors - such as mentioning local variables in other local variables.
 
-The file name patterns are specified as *regular expressions* in the TOML configuration file, as this gives more granularity while specifying what has to be chosen and what to skip, compared to the wildcard semantics found in most shells. Patterns are provided as lists of regular expression strings, so that matching any of the list items is considered a good match for the given condition.
+Jobs are related to a source and a destination directory: it is possible to create the destination path if it doesn't exist, and to recreate totally or partially the source structure at the destination. Jobs can be instructed to copy files, according to selection criteria specified in the configuration: such criteria include file name patterns for both inclusion and exclusion, checking file age and/or contents compared to a possibly existing destination file, and patterns for subdirectories to skip. A job can also remove files existing in the destination directory if they match the naming criteria provided for the source and are not present in the source directory.
+
+File name patterns are passed to **copyjob** as *regular expressions* in the TOML configuration file, as this gives more granularity while specifying what has to be chosen and what to skip, compared to the wildcard semantics found in most shells. All patterns are provided as lists of regular expression strings, so that matching any pattern in the list items is considered a good match for the given condition.
 
 For a description of TOML as a configuration file language, see the language [specification](https://toml.io/), and for a description of regular expression syntax and semantics, see [Wikipedia](https://en.wikipedia.org/wiki/Regular_expression); there are many useful tutorials around about *RE*s, and also many syntax checkers and interactive tools to test patterns before using them in real life cases such as **copyjob** jobs.
 
 > [!CAUTION]
-> This software is in early development stage. It works as expected in the use cases that I have been able to experiment, but it can behave in unexpected ways in cases not covered by my own tests. It should not destroy any contents in the source directories, however files in destination directories may be overwritten or deleted without notice: use it with caution, possibly after a backup.
+> This software is in early development stage. Besides [known issues](#known-problems), it might behave in a way other than expected in cases that I haven't be able to personally test. No file in the source directory should be at risk (unless there are references/links to it in the destination directory), but the destination directory is in control of **copyjob**: in case of incorrect configurations, or even bugs, files located there can be overwritten or deleted.
 
 
 ## Usage
@@ -38,7 +41,7 @@ Options:
   -V, --version            Print version
 ```
 
-The command called with `--quiet` or `-q` as parameter, followed by the configuration file path, will only exit with an *error* value in case of unrecoverable errors, and when invoked with the `--log-json` or `-J` parameter will produce output in JSON format, that would be easier for another program to parse, although more difficult for a human to read. In order to test a configuration and see what modifications it would produce, without actually touching the file system, the `--dry-run` (or its `-D` short form) can be used.
+The command called with `--quiet` or `-q` as parameter, followed by the configuration file path, will only exit with an *error* (nonzero) value in case of unrecoverable errors, and when invoked with the `--log-json` or `-J` parameter will produce output in JSON format, that would be easier for another program to parse, although more difficult for a human to read. In order to test a configuration and see what modifications it would produce, without actually touching the file system, the `--dry-run` (or its `-D` short form) can be used.
 
 > [!NOTE]
 > The `--dry-run` produced output is the same as if **copyjob** were actually performing the operations specified in the configuration file: no extra field or string is reported in the log or to the console to remind that current run is not effective.
@@ -136,7 +139,7 @@ Most parameters can be defined at the global level in the configuration file, an
 | `trash_on_overwrite`     | false       | use garbage bin before overwriting (unless overridden)  |
 | `remove_others_matching` | false       | remove matching files at destination if not in source   |
 
-As said, a list of active jobs has to be defined, otherwise no job will be performed (although **copyjob** will not issue an error). This is done by defining the list:
+As said, a list of active jobs has to be defined. This is done by defining the mandatory list:
 
 ```toml
 active_jobs = [
@@ -146,7 +149,7 @@ active_jobs = [
 ]
 ```
 
-where the jobs *name1*, *name2*, and so on *must* be defined, otherwise the command will exit with an error. Thanks to TOML flexible syntax, the array can span multiple lines - which is useful for commenting out jobs when not needed.
+where the jobs *name1*, *name2*, and so on *must* be defined, otherwise the command will exit with an error. Thanks to TOML flexible syntax, the array can span multiple lines - which is useful for commenting out jobs when not needed. The job execution order is the order in which it appears on the list. Note that a job can appear multiple times, in which case **copyjob** will execute it as many times it is mentioned, and at the positions where it is mentioned.
 
 The optional `[variables]` section can be used to define local variables: their string values replace occurrences of the pattern `%{VAR_NAME}` in source and destination paths (but *not* in regular expression patterns), so that the string `%{VAR_NAME}/path` becomes `/some/path` if `VAR_NAME` is assigned the value `/some`. The syntax is the following:
 
@@ -162,11 +165,9 @@ where `VAR1`, `VAR2` and so on are alphanumeric strings that begin with an alpha
 > [!WARNING]
 > Citing local variables in other local variables *is not allowed*. In fact, even using the `%{VAR_NAME}` pattern, where `VAR_NAME` is an alphanumeric string, in a variable definition is reported as a configuration error. Also, at the time, a maximum of 16 local variable replacements per string is performed: this limit will probably be removed in an upcoming release.
 
-Moving to the garbage bin (named *Recycle Bin*, *Trash* and in other ways on different desktop environments) is supported instead of both deleting files and also overwriting, respectively setting the `trash_on_delete` flag and the `trash_on_overwrite` flag to `true` (`trash_on_delete` is `true` by default). Failure to recycle a file with the `trash_on` flags set is considered an error, especially with reference to the `halt_on_error` parameter. When overwriting, a file is only moved to the garbage bin when it is supposed to be overwritten - thus not when other conditions (such as age or contents checking) fail.
+Moving to the garbage bin (named *Recycle Bin*, *Trash* and in other ways on different desktop environments) is supported instead of both deleting and overwriting files, respectively setting the `trash_on_delete` and the `trash_on_overwrite` flags to `true` (`trash_on_delete` is `true` by default). Failure to recycle a file with the `trash_on...` flags set raises an error, especially with reference to the `halt_on_error` parameter. When overwriting, a file is only moved to the garbage bin when it is supposed to be overwritten - thus not when other conditions (such as age or contents checking) fail.
 
-A special mention is due for `remove_others_matching`: when set to `true`, the files that match the job *RE* specifications and do not exist in the source directories are *removed* on the destination directory. This still yields when copy operations from the source to the destination do not succeed for any reason. The rationale behind this choice is, that an user that turns that particular parameter on would probably want to clean up the folders at the destination from unnecessary files, even when there are versions of the source documents (for example newer) that cause the copy operation to fail.
-
-Also, note that if a flat destination is chosen (`keep_structure = false`) and the job is set to walk subdirectories (`recursive = true`), the result *might be unexpected* when a file with the same name is found in the main directory and/or in subdirectories: which file will be copied depends on the order in which the OS traverses subdirectories, and which one of the homonymous source files is older in case only newer files are set to be replicated.
+A special mention is due for `remove_others_matching`: when set to `true`, the files that match the job *RE* specifications and do not exist in the source directories are *removed* from the destination directory. This still yields when copy operations from the source to the destination do not succeed for any reason. The rationale behind this choice is, that an user that turns that particular parameter on would probably want to clean up the folders at the destination from unnecessary files, even when there are versions of the source documents (for example newer) that cause the copy operation to fail.
 
 
 ### Configuration of jobs
@@ -197,13 +198,13 @@ Each job is introduced by the string `[[job]]` on a single line (the double squa
 > [!NOTE]
 > While it is possible to omit many parameters as said above, any *undefined* parameter in the configuration file will be considered an error, and cause the abortion of the operation before any job execution: the offending parameter is reported unless the output is suppressed.
 
-The `patterns_exclude` and `patterns_exclude_dir` parameters are *optional*, and when specified will respectively skip files that match `patterns_include` but *also* match `patterns_exclude`, and skip subdirectories whose names match `patterns_exclude_dir` in case `recursive` is set to `true`. For instance, if all subdirectories whose names begin with *ARCHIVE_* have to be skipped, the job will contain the following definition:
+The `patterns_exclude` and `patterns_exclude_dir` parameters are *optional*, and when specified will respectively skip files that match `patterns_include` but *also* match `patterns_exclude`, and skip subdirectories whose names match `patterns_exclude_dir` in case `recursive` is set to `true`. For instance, if all subdirectories of the source whose names begin with `ARCHIVE_` need to be skipped, the job will contain the following definition:
 
 ```toml
 patterns_exclude_dir = [ 'ARCHIVE_.*' ]
 ```
 
-since the *pattern_...* parameters only accept lists as their values.
+since the `pattern_...` parameters only accept lists as their values.
 
 All other (boolean) parameters are *optional*, and when omitted will carry their default value, or the value defined at global level if present.
 
@@ -224,19 +225,23 @@ In the `source` and `destination` directory specifications, two predefined marke
 | `~/`       | the user home directory                               |
 | `@/`       | the directory where the configuration file is located |
 
-*at the beginning* of the path specification. So, if we run copyjob with */tmp/copyjob.toml* as an argument and the source directory specification is `@/some/path`, the actual source directory will be expanded to `/tmp/some/path`. These special markers can also be used in local variables, as long as the local variables are mentioned at the beginning of directory specifications: markers in positions different from the beginning will be ignored.
+*at the beginning* of the path specification. So, if we run copyjob with */tmp/copyjob.toml* as an argument and the source directory specification is `@/some/path`, the actual source directory will be expanded to `/tmp/some/path`. These special markers can also be used in local variables, as long as they are mentioned at the beginning of directory specifications: markers in positions different from the beginning will be ignored.
 
-On Windows the slash can be replaced by a backslash.
+On Windows, the slash can be replaced by a backslash.
 
 
 ## Known problems
 
-There are some edge cases in which **copyjob** might behave in a different way than one could expect, especially when handling symbolic links. This is the reason why the `follow_symlinks` configuration parameter is set to *false* by default both at global and at job level, and the suggestion is to avoid following symlinks - unless the destination directory is *entirely* managed by **copyjob**. **copyjob**, in fact, will never create links in the destination folder, it just copies contents. If the destination directory contains links:
+There are some edge cases in which **copyjob** might behave in a different way than one could expect, especially when handling symbolic links. This is the reason why the `follow_symlinks` configuration parameter is set to *false* by default both at global and at job level, and the suggestion is to avoid following symlinks - unless the destination directory is *entirely* managed by **copyjob**. **copyjob**, in fact, will never create links in the destination folder, it just copies contents. When the destination directory contains links:
 
 * if `follow_symlinks` is *true* and a link points to anything (especially a directory) outside the destination tree, the copy and delete operations will be performed at the actual, linked, destination - as long as the user invoking the command has the permissions to do this;
 * if `follow_symlinks` is *false* and a link is found in the destination that is eligible for overwriting, the link itself can be overwritten by an actual file.
 
 In any case, if the destination is not managed exclusively by **copyjob**, the suggestion is to keep `follow_symlinks` unset, and to avoid to use directories containing symbolic links as targets for the utility.
+
+Also, note that if a flat destination layout is chosen (`keep_structure = false`) and the job is set to walk subdirectories (`recursive = true`) in the source, the result *might be unexpected* when a file with the same name is found multiple times in the tree: which file will be copied depends on the order in which the OS traverses subdirectories, and which one of the homonymous source files is older in case only newer files are set to be replicated.
+
+Although this cannot be considered a problem, it is worth mentioning that **copyjob** will refuse to run a job where the source directory is contained in the destination, or the opposite case where the destination is a subdirectory of the source.
 
 
 ## Output of **copyjob**
