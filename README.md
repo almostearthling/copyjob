@@ -38,7 +38,10 @@ Options:
   -V, --version            Print version
 ```
 
-The command called with `--quiet` or `-q` as parameter, followed by the configuration file path, will only exit with an *error* value in case of unrecoverable errors, and when invoked with the `--log-json` or `-J` parameter will produce output in JSON format, that would be easier for another program to parse, although more difficult for a human to read. In order to test a configuration and see what modifications it would produce, without actually touching the fiule system, the `--dry-run` (or its `-D` short form) can be used.
+The command called with `--quiet` or `-q` as parameter, followed by the configuration file path, will only exit with an *error* value in case of unrecoverable errors, and when invoked with the `--log-json` or `-J` parameter will produce output in JSON format, that would be easier for another program to parse, although more difficult for a human to read. In order to test a configuration and see what modifications it would produce, without actually touching the file system, the `--dry-run` (or its `-D` short form) can be used.
+
+> [!NOTE]
+> The `--dry-run` produced output is the same as if **copyjob** were actually performing the operations specified in the configuration file: no extra field or string is reported in the log or to the console to remind that current run is not effective.
 
 The basic invocation is
 
