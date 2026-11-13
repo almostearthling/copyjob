@@ -13,12 +13,12 @@ File name patterns are passed to **copyjob** as *regular expressions* in the TOM
 For a description of TOML as a configuration file language, see the language [specification](https://toml.io/), and for a description of regular expression syntax and semantics, see [Wikipedia](https://en.wikipedia.org/wiki/Regular_expression); there are many useful tutorials around about *RE*s, and also many syntax checkers and interactive tools to test patterns before using them in real life cases such as **copyjob** jobs.
 
 > [!CAUTION]
-> This software is in early development stage. Besides [known issues](#known-problems), it might behave in a way other than expected in cases that I haven't be able to personally test. No file in the source directory should be at risk (unless there are references/links to it in the destination directory), but the destination directory is in control of **copyjob**: in case of incorrect configurations, or even bugs, files located there can be overwritten or deleted.
+> This software is in early development stage. Besides [known issues](#known-problems), it might behave in a way other than expected in cases that I haven't been able to personally test. No file in the source directory should be at risk (unless there are references/links to it in the destination directory), but the destination directory is in control of **copyjob**: in case of incorrect configurations, or even bugs, files located there are subject to being overwritten or deleted.
 
 
 ## Usage
 
-**copyjob** can be invoked from the command line. By typing `copyjob --help` at the prompt, the utility will display a brief usage message:
+**copyjob** is invoked from the command line. By typing `copyjob --help` at the prompt, the utility will display a brief usage message:
 
 ```text
 Perform complex file copy operations
@@ -41,7 +41,7 @@ Options:
   -V, --version            Print version
 ```
 
-The command called with `--quiet` or `-q` as parameter, followed by the configuration file path, will only exit with an *error* (nonzero) value in case of unrecoverable errors, and when invoked with the `--log-json` or `-J` parameter will produce output in JSON format, that would be easier for another program to parse, although more difficult for a human to read. In order to test a configuration and see what modifications it would produce, without actually touching the file system, the `--dry-run` (or its `-D` short form) can be used.
+When called with `--quiet` or `-q` as parameter, followed by the configuration file path, will only exit with an *error* (nonzero) value in case of errors, and when invoked with the `--log-json` or `-J` parameter will produce output in JSON format, which is easier for an invoking frontend to parse, although more difficult for a human to read. In order to test a configuration and see what modifications it would produce, without actually touching the file system, the `--dry-run` (or its `-D` short form) can be used.
 
 > [!NOTE]
 > The `--dry-run` produced output is the same as if **copyjob** were actually performing the operations specified in the configuration file: no extra field or string is reported in the log or to the console to remind that current run is not effective.
@@ -117,7 +117,7 @@ Although the configuration file defines two different jobs, in this case only on
 
 Also note the system variable `HOME` in the paths (or better, in this case, in the local variables that are used in the source and target paths) that will be replaced on UNIX-like systems by the actual user home directory (we will see that this restriction can be overridden on Windows without having to explicitly define `HOME`).
 
-A template configuration file is provided, *copyjob_template.toml*.
+A template configuration file is provided, in *copyjob_template.toml*.
 
 
 ### Configuration at the global level
@@ -163,11 +163,11 @@ VAR2 = "/a/path/chunk"
 where `VAR1`, `VAR2` and so on are alphanumeric strings that begin with an alphabetic character. Casing is free, and occurrences are case sensitive. Local variables can mention environment variables: mentioning an undefined variable will replace the occurrence with the empty string, thus mimicking the behaviour of UNIX shells. An environment variable can be mentioned in the form `${VAR_NAME}` both in local variables and in source and destination paths.
 
 > [!WARNING]
-> Citing local variables in other local variables *is not allowed*. In fact, even using the `%{VAR_NAME}` pattern, where `VAR_NAME` is an alphanumeric string, in a variable definition is reported as a configuration error. Also, at the time, a maximum of 16 local variable replacements per string is performed: this limit will probably be removed in an upcoming release.
+> Mentioning an undefined local variable results in a configuration error. Citing local variables in other local variables *is not allowed* as well, and raises a configuration error. In fact, even using the `%{VAR_NAME}` pattern, where `VAR_NAME` is an alphanumeric string, in a variable definition is reported as an error. At the time, a maximum of 16 local variable replacements per string is performed: this limit might eventually be removed in a future release.
 
-Moving to the garbage bin (named *Recycle Bin*, *Trash* and in other ways on different desktop environments) is supported instead of both deleting and overwriting files, respectively setting the `trash_on_delete` and the `trash_on_overwrite` flags to `true` (`trash_on_delete` is `true` by default). Failure to recycle a file with the `trash_on...` flags set raises an error, especially with reference to the `halt_on_error` parameter. When overwriting, a file is only moved to the garbage bin when it is supposed to be overwritten - thus not when other conditions (such as age or contents checking) fail.
+Moving to the garbage bin (named *Recycle Bin*, *Trash* and in other ways on different desktop environments) is supported instead of both deleting and overwriting files, respectively setting the `trash_on_delete` and the `trash_on_overwrite` flags to `true` (`trash_on_delete` is `true` by default). Failure to recycle a file with the `trash_on...` flags set raises an error, and stop a job when the `halt_on_errors` parameter is set. When overwriting, a file is only moved to the garbage bin when it is supposed to be overwritten - thus not when other conditions (such as age or contents checking) fail.
 
-A special mention is due for `remove_others_matching`: when set to `true`, the files that match the job *RE* specifications and do not exist in the source directories are *removed* from the destination directory. This still yields when copy operations from the source to the destination do not succeed for any reason. The rationale behind this choice is, that an user that turns that particular parameter on would probably want to clean up the folders at the destination from unnecessary files, even when there are versions of the source documents (for example newer) that cause the copy operation to fail.
+A special mention is due for `remove_others_matching`: when set to `true`, the files in the destination folder that match `patterns_include`, and do not exist in the source, are *removed* from the destination. This still yields when copy operations from the source to the destination do not succeed for any reason: the rationale behind this choice is, that an user that turns that particular parameter on would probably want to clean up the folders at the destination from unnecessary or obsolete files, even when there are versions of the source documents (for example newer) that cause the copy operation to fail.
 
 
 ### Configuration of jobs
