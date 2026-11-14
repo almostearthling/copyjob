@@ -918,7 +918,7 @@ use clap::Parser;
 #[derive(Parser)]
 #[command(name = "copyjob", version, about)]
 struct Args {
-    /// suppress all output
+    /// Suppress all output
     #[arg(short, long)]
     quiet: bool,
 
@@ -936,7 +936,7 @@ struct Args {
     )]
     log_level: LogType,
 
-    /// Append to an existing log file if found
+    /// Append log to the file specified with `--log`, if it exists
     #[arg(short = 'a', long, requires = "log")]
     log_append: bool,
 
@@ -952,11 +952,11 @@ struct Args {
     #[arg(short = 'J', long, group = "logformat")]
     log_json: bool,
 
-    /// just write output without modifying the file system
+    /// Just log what would be copied without modifying the file system
     #[arg(short = 'D', long = "dry-run")]
     dry_run: bool,
 
-    /// path to configuration file
+    /// Path to configuration file
     #[arg()]
     config: String,
 }
