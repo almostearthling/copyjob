@@ -336,7 +336,7 @@ You might want to use `-l <logfile> -a` to use a single, specific log file, espe
 
 ## Use of LLMs and AI in this project
 
-I am using this little project to experiment with LLM-based code review: no code has been actually written or explicitly proposed by a LLM. LLMs (mostly Anthropic's *Claude Code*) just reviewed the codebase, catching issues except the ones that they have been told to leave alone, either because I didn't consider them erratic behaviours or because I preferred to defer a solution, or a choice on how to handle them.
+I am using this little project to experiment with LLM-based code review: no code has been actually written or explicitly proposed by a LLM. LLMs (mostly Anthropic's *Claude Code*) just reviewed the codebase, catching issues except the ones that they have been told to leave alone, either because I didn't consider them erratic behaviours or because I preferred to defer a solution, or a choice on how to handle them. *Claude Code* has also been helpful in reviewing and proofreading the documentation, in this case too through suggestions only.
 
 
 ## License
