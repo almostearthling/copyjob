@@ -1066,7 +1066,7 @@ fn main() -> std::io::Result<()> {
             LogType::Error,
             LOG_WHEN_END,
             LOG_STATUS_FAIL,
-            "part of the jobs did not complete successfully",
+            "part of the operations did not complete successfully",
         );
         // flush log to prevent output loss on shortcut exit
         if let Some(handle) = handle {
