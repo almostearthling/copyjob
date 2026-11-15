@@ -1,0 +1,317 @@
+//! Path management utilities
+
+use regex::{Regex, RegexBuilder};
+use std::collections::HashMap;
+use std::ffi::{OsStr, OsString};
+use std::path::{Path, PathBuf};
+
+use bstr::*;
+use lazy_static::lazy_static;
+
+use crate::constants::*;
+use crate::utility::result::{Error, Kind, Result};
+
+/// Character to use in formats to avoid clashes with variable names
+// Windows allows many characters that are disallowed in POSIX environment
+// variables so we choose the pipe `|` character that cannot be used for
+// this purpose (at least on the command line); this is also safe for local
+// variables which follow the POSIX convention
+pub const FORMAT_SAFE_CHAR: &str = "|";
+
+// separators kept as constants, as well as the index until which double
+// backslashes are allowed on Windows
+pub const UNIX_SEP: u8 = b'/';
+
+#[cfg(windows)]
+pub const WIN_SEP: u8 = b'\\';
+#[cfg(windows)]
+const WIN_DSLASH_ALLOW_UPTO: usize = 2;
+
+// iteration cap for circular variable references: they should not be allowed
+// but they are hard to spot, so for now we just put a limit on how many times
+// a locally defined variable can be used in a path
+const MAX_REPLACE_ITERATIONS: usize = 16;
+
+lazy_static! {
+    // variable mention expressions: *_LOC is the mention of a variable
+    // defined in the configuration file, *_ENV is the mention of a variable
+    // defined in the system environment
+    pub static ref RE_VARMENTION_LOC: Regex = Regex::new(r"[%]\{([a-zA-Z_][a-zA-Z0-9_]*)\}").unwrap();
+    pub static ref RE_VARMENTION_ENV: Regex = Regex::new(r"[\$]\{([a-zA-Z_][a-zA-Z0-9_]*)\}").unwrap();
+
+    // these must have a pipe char corresponding to the internal group of the
+    // corresponding RE_VARMENTION_* instance
+    pub static ref FMT_VARMENTION_LOC: String = format!("%{{{FORMAT_SAFE_CHAR}}}");
+    pub static ref FMT_VARMENTION_ENV: String = format!("${{{FORMAT_SAFE_CHAR}}}");
+}
+
+/// This makes variables and markers replacement easier, also offering a
+/// check utility to test whether or not all variables mentioned in the string
+/// are defined in the substitution map.
+pub trait ReplaceVars: Sized {
+    fn replace_start(&self, vars: &HashMap<Self, Self>) -> Result<Self>;
+    fn check_vars(
+        &self,
+        pattern: &Regex,
+        vars: &HashMap<Self, Self>,
+        case_insensitive: bool,
+    ) -> bool;
+    fn replace_vars(
+        &self,
+        pattern: &Regex,
+        format: &str,
+        vars: &HashMap<Self, Self>,
+        case_insensitive: bool,
+    ) -> Result<Self>;
+}
+
+impl ReplaceVars for OsString {
+    fn replace_start(&self, vars: &HashMap<OsString, OsString>) -> Result<OsString> {
+        let mut s = OsString::from(self);
+        for (k, v) in vars {
+            if s.as_encoded_bytes().starts_with(k.as_encoded_bytes()) {
+                s = OsString::from(
+                    s.as_os_str()
+                        .as_encoded_bytes()
+                        .replacen(
+                            k.as_encoded_bytes(),
+                            v.as_os_str().as_encoded_bytes().as_bstr(),
+                            1,
+                        )
+                        .as_bstr()
+                        .to_path()?,
+                );
+                break;
+            }
+        }
+        Ok(s)
+    }
+
+    fn check_vars(
+        &self,
+        pattern: &Regex,
+        vars: &HashMap<Self, Self>,
+        case_insensitive: bool,
+    ) -> bool {
+        let s = self.to_string_lossy();
+        let pattern = if case_insensitive {
+            RegexBuilder::new(pattern.as_str())
+                .case_insensitive(true)
+                .build()
+                .unwrap()
+        } else {
+            pattern.clone()
+        };
+        pattern
+            .captures_iter(&s)
+            .all(|c| vars.contains_key(&OsString::from(&c[1])))
+    }
+
+    fn replace_vars(
+        &self,
+        pattern: &Regex,
+        format: &str,
+        vars: &HashMap<OsString, OsString>,
+        case_insensitive: bool,
+    ) -> Result<OsString> {
+        let mut result = OsString::from(self);
+        let mut cap: usize = 0;
+        let pattern = if case_insensitive {
+            RegexBuilder::new(pattern.as_str())
+                .case_insensitive(true)
+                .build()
+                .unwrap()
+        } else {
+            pattern.clone()
+        };
+
+        // we need a helper that finds an entry according to case sensitivity;
+        // note that this will find the first occurrence, if it exists, of a
+        // variable in the case insensitive branch: if there are two distinct
+        // entries with the same name apart from casing, the first one in the
+        // iterator is returned; if case insensitivity is only used for
+        // environment variables on Windows, this is the expected behavior
+        let find_entry = |hm: &HashMap<OsString, OsString>, key: &OsStr| {
+            if case_insensitive {
+                hm.iter()
+                    .find(|k| k.0.eq_ignore_ascii_case(key))
+                    .map(|c| c.1.clone())
+            } else {
+                hm.get(key).cloned()
+            }
+        };
+
+        // mimick shell by replacing undefined variables with the empty string:
+        // since the same function is used for both local and environment vars,
+        // this represents a difference with the Python version, that considered
+        // mentioning an undefined local variable a fatal error
+        // WARNING: this actually assumes that the regular expression pattern
+        //          "[%$]\{[a-zA-Z_][a-zA-Z0-9_]*\}" cannot appear in the source or
+        //          the destination directory within job definitions
+        while let Some(caps) = pattern.captures(
+            result
+                .as_os_str()
+                .as_encoded_bytes()
+                .as_bstr()
+                .to_string()
+                .as_str(),
+        ) {
+            let varname = caps.get(1).map_or("", |m| m.as_str());
+            let occurrence = format.replace(FORMAT_SAFE_CHAR, varname);
+            let bs = result.as_os_str().as_encoded_bytes();
+            if let Some(replacement) = find_entry(vars, &OsString::from(varname)) {
+                let bs = bs.replace(
+                    occurrence.as_bytes(),
+                    replacement.as_os_str().as_encoded_bytes(),
+                );
+                result = OsString::from(bs.to_os_str()?);
+                cap += 1;
+                if cap > MAX_REPLACE_ITERATIONS {
+                    return Err(Error::new(
+                        super::result::Kind::Failed,
+                        ERR_TOO_MANY_REPLACEMENTS,
+                    ));
+                }
+            } else {
+                let bs = bs.replace(occurrence.as_bytes(), "".as_bytes());
+                result = OsString::from(bs.to_os_str()?);
+            }
+        }
+        Ok(result)
+    }
+}
+
+#[cfg(windows)]
+/// convert slashes to backslashes and remove duplicate backslashes
+pub fn normalize_path_slashes(path: &Path, add_trailing: bool) -> PathBuf {
+    // we build a target string which is at most as big as the origin, plus
+    // one byte to completely avoid reallocation (see below)
+    let bpath = path.as_os_str().as_encoded_bytes().as_bstr();
+    let mut bres = BString::new(Vec::with_capacity(bpath.len() + 1));
+
+    for (cnt, c) in bpath.iter().enumerate() {
+        // convert unix separators to win separators
+        let c = if *c == UNIX_SEP { WIN_SEP } else { *c };
+
+        // append the new character as long as it is possible: if it is a
+        // separator, we must at least have passed the second path character
+        // because double backslashes are allowed at the beginning of UNC
+        // paths, or the result must not end with a backslash; otherwise
+        // append everything
+        if c == WIN_SEP {
+            if cnt < WIN_DSLASH_ALLOW_UPTO || !bres.ends_with(&[c]) {
+                bres.push(c);
+            }
+        } else {
+            bres.push(c);
+        }
+    }
+
+    // this is the part where the new bstring might have needed to be extended
+    // if we didn't add the extra byte of capacity at the beginning
+    if add_trailing && !bres.ends_with(&[WIN_SEP]) {
+        bres.push(WIN_SEP);
+    }
+
+    // this is not unsafe because the bytes we are working on were
+    // originated just above, and no encoding mismatch can take place
+    PathBuf::from(unsafe { OsStr::from_encoded_bytes_unchecked(bres.as_slice()) })
+}
+
+#[cfg(unix)]
+/// remove duplicate slashes
+pub fn normalize_path_slashes(path: &Path, add_trailing: bool) -> PathBuf {
+    // we build a target string which is at most as big as the origin, plus
+    // one byte to completely avoid reallocation (see below)
+    let bpath = path.as_os_str().as_encoded_bytes().as_bstr();
+    let mut bres = BString::new(Vec::with_capacity(bpath.len()));
+
+    for c in bpath.iter() {
+        // append the new character as long as it is possible: if it is a
+        // separator it is appended only if the result does not already end
+        // with a separator
+        if *c != UNIX_SEP || !bres.ends_with(&[*c]) {
+            bres.push(*c);
+        }
+    }
+
+    // this is the part where the new bstring might have needed to be extended
+    // if we didn't add the extra byte of capacity at the beginning
+    if add_trailing && !bres.ends_with(&[UNIX_SEP]) {
+        bres.push(UNIX_SEP);
+    }
+
+    // this is not unsafe because the bytes we are working on were
+    // originated just above, and no encoding mismatch can take place
+    PathBuf::from(unsafe { OsStr::from_encoded_bytes_unchecked(bres.as_slice()) })
+}
+
+pub fn interpolate_dir(
+    raw: &str,
+    markers: &HashMap<&str, PathBuf>,
+    local_vars: &HashMap<OsString, OsString>,
+    sys_vars: &HashMap<OsString, OsString>,
+) -> Result<PathBuf> {
+    // check that all mentioned local variables are defined: while it can be
+    // considered idiomatic that the environment variables evaluate to the
+    // empty string (and it is not safe, but at least expected), variables
+    // defined in the configuration file should be treated more strictly
+    if !OsString::from(raw).check_vars(&RE_VARMENTION_LOC, local_vars, false) {
+        Err(Error::new(Kind::Unavailable, ERR_LOCAL_VAR_UNDEFINED))
+    } else {
+        Ok(PathBuf::from({
+            // note that we first replace the variables that have been defined in
+            // the configuration files, which can contain themselves start markers
+            // and therefore we replace markers just after that; markers in the
+            // environment variables are ignored, because if present they are not
+            // supposed to be aware of copyjob
+            OsString::from(raw)
+                .replace_vars(
+                    &RE_VARMENTION_LOC,
+                    &FMT_VARMENTION_LOC,
+                    &local_vars
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect(),
+                    false,
+                )?
+                .replace_start(
+                    &markers
+                        .iter()
+                        .map(|(k, v)| (OsString::from(*k), v.as_os_str().to_owned()))
+                        .collect(),
+                )?
+                .replace_vars(
+                    &RE_VARMENTION_ENV,
+                    &FMT_VARMENTION_ENV,
+                    &sys_vars
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect(),
+                    cfg!(windows),
+                )?
+        }))
+    }
+}
+
+/// check a predicate on the last part of a path, usually the file name
+pub fn check_filename_for<F>(path: &Path, predicate: F) -> bool
+where
+    F: Fn(&OsStr) -> bool,
+{
+    path.file_name().is_some_and(predicate)
+}
+
+// /// check a predicate on the first part of a path, usually the directory
+// pub fn check_dirnames_for<F>(path: &Path, predicate: F) -> bool
+// where
+//     F: Fn(&OsStr) -> bool,
+// {
+//     // we only check parts, no matter where we begin, therefore the check can
+//     // be performed on the reversed list of path elements; moreover this also
+//     // more coherent, as shallower components have probably already been
+//     // checked if this function is used in a directory walk
+//     path.iter().rev().skip(1).any(|x| predicate(x))
+// }
+
+// end.

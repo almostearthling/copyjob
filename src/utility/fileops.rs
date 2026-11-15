@@ -1,0 +1,276 @@
+//! File operations: copy or delete a file
+
+use std::fs;
+use std::fs::File;
+use std::fs::create_dir_all;
+use std::fs::metadata;
+use std::fs::symlink_metadata;
+use std::path::{Path, PathBuf};
+
+use soft_canonicalize::soft_canonicalize;
+
+use data_encoding::HEXLOWER;
+use sha2::{Digest, Sha256};
+use std::io::BufReader;
+use std::io::Read;
+
+use crate::constants::*;
+use crate::utility::result::*;
+
+/// reports whether or not a file operation has been carried out or not
+#[derive(Debug, PartialEq, Eq)]
+pub enum Outcome {
+    Done,
+    Skipped(String),
+}
+
+// impl Outcome {
+//     fn is_done(&self) -> bool {
+//         match self {
+//             Done => { true },
+//             _ => { false }
+//         }
+//     }
+// }
+
+// helper to calculate hash for a single file
+// see https://stackoverflow.com/a/71606608/5138770
+fn sha256_digest(path: &Path) -> std::io::Result<String> {
+    let input = File::open(path)?;
+    let mut reader = BufReader::new(input);
+
+    let digest = {
+        let mut hasher = Sha256::new();
+        let mut buffer = [0; 4096];
+        loop {
+            let count = reader.read(&mut buffer)?;
+            if count == 0 {
+                break;
+            }
+            hasher.update(&buffer[..count]);
+        }
+        hasher.finalize()
+    };
+    Ok(HEXLOWER.encode(digest.as_ref()))
+}
+
+/// Attempt to copy a single file to a destination (provided as a path):
+/// source and destination are full or relative to current FS position,
+/// they must be both complete, in particular destination must include the
+/// file name component. The implementation itself uses PathBuf based
+/// variables for file name handling; also, the helper takes care to create
+/// the destination path if instructed to, and to compare modification time
+/// and contents of the destination file if it exists. A full description
+/// of the required parameters follows:
+///
+/// - source: the full specification of source file
+/// - destination: the full specification of destination file
+/// - overwrite: if false, never overwrite an existing destination
+/// - skip_newer: if overwrite, only overwrite when source is newer
+/// - check_content: if overwrite, only overwrite when contents differ
+/// - follow_symlinks: follow symbolic links
+/// - create_directories: create directory if it does not exist yet
+/// - trash_on_overwrite: to send to garbage bin instead of overwriting
+pub fn copy_file(
+    source: &Path,
+    destination: &Path,
+    overwrite: bool,
+    skip_newer: bool,
+    check_content: bool,
+    follow_symlinks: bool,
+    create_directories: bool,
+    trash_on_overwrite: bool,
+    dry_run: bool,
+) -> Result<Outcome> {
+    // first check that there is something to copy
+    if !source.exists() {
+        return Err(Error::new(Kind::Invalid, ERR_SOURCE_NOT_EXISTS));
+    }
+    if source.is_symlink() && !follow_symlinks {
+        return Ok(Outcome::Skipped(ERR_SOURCE_IS_SYMLINK.to_string()));
+    }
+    if source.is_dir() {
+        return Err(Error::new(Kind::Invalid, ERR_SOURCE_IS_DIR));
+    }
+    if !source.is_file() {
+        return Err(Error::new(Kind::Invalid, ERR_SOURCE_NOT_ACCESSIBLE));
+    }
+
+    // a flag that keeps track of whether we are overwriting or not
+    let mut overwriting = false;
+
+    match metadata(source) {
+        Ok(s_stat) => {
+            // first check that source <> destination
+            if soft_canonicalize(source)? == soft_canonicalize(destination)? {
+                return Err(Error::new(Kind::Invalid, ERR_DESTINATION_IS_ITSELF));
+            }
+
+            match metadata(destination) {
+                Ok(d_stat) => {
+                    // if we are here, then the destination exists: check
+                    // whether overwrite is false, compare s_stat, d_stat and
+                    // possibly hashes
+                    if !overwrite {
+                        return Ok(Outcome::Skipped(ERR_DESTINATION_EXISTS.to_string()));
+                    } else if d_stat.is_dir() {
+                        return Err(Error::new(Kind::Invalid, ERR_DESTINATION_IS_DIR));
+                    } else {
+                        if let Ok(d_stat) = symlink_metadata(destination)
+                            && d_stat.is_symlink()
+                            && !follow_symlinks
+                        {
+                            return Ok(Outcome::Skipped(ERR_DESTINATION_IS_SYMLINK.to_string()));
+                        }
+                    };
+
+                    if skip_newer && s_stat.modified()? <= d_stat.modified()? {
+                        return Ok(Outcome::Skipped(ERR_DESTINATION_IS_NEWER.to_string()));
+                    }
+
+                    // only when asked perform content checking via SHA256
+                    // and skip copy if the contents are the same
+                    if check_content && sha256_digest(source)? == sha256_digest(destination)? {
+                        return Ok(Outcome::Skipped(ERR_DESTINATION_IS_IDENTICAL.to_string()));
+                    }
+
+                    // if this point is reached we are actually overwriting
+                    overwriting = true;
+                }
+                Err(e) => {
+                    if e.kind() == std::io::ErrorKind::NotFound {
+                        // in case of error check whether or not the destination
+                        // directory exists, and if not create it when instructed
+                        // to do so
+                        let mut destination_dir = PathBuf::from(&destination);
+                        if !destination_dir.pop() {
+                            return Err(Error::new(Kind::Forbidden, ERR_CANNOT_CREATE_DIR));
+                        }
+                        if let Ok(d_stat) = symlink_metadata(destination)
+                            && d_stat.is_symlink()
+                            && !follow_symlinks
+                        {
+                            return Ok(Outcome::Skipped(ERR_DESTINATION_IS_SYMLINK.to_string()));
+                        }
+                        match metadata(&destination_dir) {
+                            Ok(d_dirdata) => {
+                                if !d_dirdata.is_dir() {
+                                    return Err(Error::new(Kind::Forbidden, ERR_CANNOT_CREATE_DIR));
+                                }
+                            }
+                            Err(e) => {
+                                // if the destination directory is not present and
+                                // missing directories are to be created, only bail
+                                // out on directory creation errors; otherwise it
+                                // is safe to go on without further checks
+                                if e.kind() == std::io::ErrorKind::NotFound {
+                                    if !create_directories {
+                                        return Err(Error::new(
+                                            Kind::Forbidden,
+                                            ERR_CANNOT_CREATE_DIR,
+                                        ));
+                                    }
+                                    if !dry_run && create_dir_all(&destination_dir).is_err() {
+                                        return Err(Error::new(
+                                            Kind::Forbidden,
+                                            ERR_CANNOT_CREATE_DIR,
+                                        ));
+                                    }
+                                } else {
+                                    return Err(Error::new(
+                                        Kind::Unavailable,
+                                        &format!("{ERR_DESTINATION_NOT_ACCESSIBLE} ({e})"),
+                                    ));
+                                }
+                            }
+                        }
+                    } else {
+                        return Err(Error::new(
+                            Kind::Unavailable,
+                            &format!("{ERR_DESTINATION_NOT_ACCESSIBLE} ({e})"),
+                        ));
+                    }
+                }
+            }
+
+            if !dry_run {
+                // try to send the file to garbage bin if configured to do so
+                // and if we are actually overwriting the destination file with
+                // no opposing condition (file age, contents, accessibility, etc)
+                if overwriting && trash_on_overwrite {
+                    trash::delete(destination)
+                        .map_err(|e| Error::new(Kind::Failed, &e.to_string()))?;
+                }
+
+                // actually copy the file using OS API
+                fs::copy(source, destination)
+                    .map(|_| Outcome::Done)
+                    .map_err(|e| {
+                        if e.kind() == std::io::ErrorKind::PermissionDenied {
+                            Error::new(Kind::Forbidden, ERR_CANNOT_WRITE_DESTINATION)
+                        } else {
+                            Error::new(
+                                Kind::Unavailable,
+                                &format!("{ERR_DESTINATION_NOT_ACCESSIBLE} ({e})"),
+                            )
+                        }
+                    })
+            } else {
+                Ok(Outcome::Done)
+            }
+        }
+        Err(e) => Err(Error::new(
+            Kind::Unavailable,
+            &format!("{ERR_SOURCE_NOT_ACCESSIBLE} ({e})"),
+        )),
+    }
+}
+
+/// attempt to remove a specified file if it exists and if allowed to
+pub fn remove_file(
+    destination: &Path,
+    follow_symlinks: bool,
+    trash_on_delete: bool,
+    dry_run: bool,
+) -> Result<Outcome> {
+    match symlink_metadata(destination) {
+        Ok(d_stat) => {
+            // if we are here, then destination exists
+            if d_stat.is_dir() {
+                Err(Error::new(Kind::Invalid, ERR_DESTINATION_IS_DIR))
+            } else if d_stat.is_symlink() && !follow_symlinks {
+                Ok(Outcome::Skipped(ERR_DESTINATION_IS_SYMLINK.to_string()))
+            } else if trash_on_delete {
+                if !dry_run {
+                    trash::delete(destination)
+                        .map(|_| Outcome::Done)
+                        .map_err(|e| {
+                            Error::new(
+                                Kind::Unavailable,
+                                &format!("{ERR_DESTINATION_NOT_ACCESSIBLE} ({e})"),
+                            )
+                        })
+                } else {
+                    Ok(Outcome::Done)
+                }
+            } else if !dry_run {
+                fs::remove_file(destination)
+                    .map(|_| Outcome::Done)
+                    .map_err(|e| {
+                        Error::new(
+                            Kind::Unavailable,
+                            &format!("{ERR_DESTINATION_NOT_ACCESSIBLE} ({e})"),
+                        )
+                    })
+            } else {
+                Ok(Outcome::Done)
+            }
+        }
+        Err(e) => Err(Error::new(
+            Kind::Unavailable,
+            &format!("{ERR_DESTINATION_NOT_ACCESSIBLE} ({e})"),
+        )),
+    }
+}
+
+// end.
