@@ -73,4 +73,10 @@ pub const LOG_STATUS_IND: &str = "IND";
 pub const LOG_STATUS_MSG: &str = "MSG";
 pub const LOG_STATUS_ERR: &str = "ERR";
 
+// error states (actually: exit codes)
+pub const ERRSTATE_OK: i32 = 0;
+pub const ERRSTATE_SOFT: i32 = 4;
+pub const ERRSTATE_HARD: i32 = 3;
+pub const ERRSTATE_OTHER: i32 = 2;
+
 // end.

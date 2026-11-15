@@ -41,7 +41,7 @@ Options:
   -V, --version            Print version
 ```
 
-When called with `--quiet` or `-q` as parameter, followed by the configuration file path, will only exit with an *error* (nonzero) value in case of errors: a log is produced only when a log file is specified; when **copyjob** is invoked with the `--log-json` or `-J` parameter, it will produce output in JSON format, which is easier for an invoking frontend to parse, although more difficult for a human to read. In order to test a configuration and see what modifications it would produce, without actually touching the file system, the `--dry-run` (or its `-D` short form) can be used.
+When called with `--quiet` or `-q` as parameter, followed by the configuration file path, it will only exit with an *error* (nonzero) [value](#exit-codes) in case of errors: a log is produced only when a log file is specified; when **copyjob** is invoked with the `--log-json` or `-J` parameter, it will produce output in JSON format, which is easier for an invoking frontend to parse, although more difficult for a human to read. In order to test a configuration and see what modifications it would produce, without actually touching the file system, the `--dry-run` (or its `-D` short form) can be used.
 
 > [!NOTE]
 > The `--dry-run` produced output is the same as if **copyjob** were actually performing the operations specified in the configuration file: no extra field or string is reported in the log or to the console to remind that current run is not effective. Also, `--dry-run` may report as successful operations that would not succeed in actual jobs, since it does not check for permission errors: such errors, in copy/deletion operations or while creating directories, can only take place in actual runs.
@@ -63,6 +63,9 @@ Configuration files for **copyjob** are standard TOML files which generally cons
 * a *jobs* section, where jobs are defined.
 
 The detail below better describes how **copyjob** configuration files are structured.
+
+> [!NOTE]
+> Any unknown parameter, or parameters defined in the wrong section, will cause **copyjob** to refuse the configuration and exit.
 
 
 ### An example of configuration file
@@ -115,7 +118,7 @@ This very simple configuration file defines two different jobs that **copyjob** 
 
 Both jobs start searching in the *Documents/MyData* subfolder of the user home: this is achieved by using the `HOME` environment variable (it only works on UNIX-like systems, unless `HOME` is properly defined, Windows uses `USERPROFILE` instead); also, the destination is in both cases a subfolder of the *CloudSync/SyncedDocs* folder that might or might not exist in the same user home directory. Because of the default configuration of **copyjob**, the appropriate destination folders are created by the utility itself in case they are not found.
 
-At the global level we instruct **copyjob** to treat file names as case insensitive, to make sure we don't miss files that could have been named slightly differently on operating systems such as Windows. Also, we define a couple of placeholders to use in source and destination directories in order to easily change the configuration of all jobs simultaneously in case the source or the target changes: for example, if the destination directory for all jobs changes to */cloud/Synced*, it's easy to modify the local variable `DEST_BASE` to `"/cloud/Synced"`, so that all the defined jobs that mention this variable (in this case, both) change accordingly.
+At the global level we instruct **copyjob** to treat file names as case insensitive, to make sure we don't miss files that could have been named slightly differently on operating systems such as Windows and macOS. Also, we define a couple of placeholders to use in source and destination directories in order to easily change the configuration of all jobs simultaneously in case the source or the target changes: for example, if the destination directory for all jobs changes to */cloud/Synced*, it's easy to modify the local variable `DEST_BASE` to `"/cloud/Synced"`, so that all the defined jobs that mention this variable (in this case, both) change accordingly.
 
 Although the configuration file defines two different jobs, in this case only one of them will be performed, that is *Reports*: this happens because the *CurrentSummary* job is commented out in the `active_jobs` list. This is useful when some jobs have to be temporarily excluded especially in highly automated tasks.
 
@@ -174,7 +177,7 @@ where `VAR1`, `VAR2` and so on are alphanumeric strings that begin with an alpha
 
 Moving to the garbage bin (named *Recycle Bin*, *Trash* and in other ways on different desktop environments) is supported instead of both deleting and overwriting files, respectively setting the `trash_on_delete` and the `trash_on_overwrite` flags to `true` (`trash_on_delete` is `true` by default). Failure to recycle a file with the `trash_on...` flags set raises an error, and stops a job when the `halt_on_errors` parameter is set. When overwriting, a file is only moved to the garbage bin when it is supposed to be overwritten - thus not when other conditions (such as age or contents checking) fail.
 
-A special mention is due for `remove_others_matching`: when set to `true`, the files at destination that match `patterns_include`, and do not exist in the source, are *removed* from the destination (on a case insensitive OS such as Windows, file names are compared case-insensitively). This still holds when copy operations from the source to the destination fail: the rationale behind this choice is, that a user that turns that particular parameter on would probably want to clean up the folders at the destination from unnecessary or obsolete files, even when there are versions of the source documents (for example newer) that cause the copy operation to fail. A corollary is that a file in the destination folder will not be deleted if it exists in the source, even if its copy operation is skipped. When no source file is matched, nothing is deleted at the destination. When `keep_structure` is *false*, only the destination directory root is taken into account for deletions.
+A special mention is due for `remove_others_matching`: when set to `true`, the files at destination that satisfy the criteria specified for copying, and do not exist in the source, are *removed* from the destination (on a case insensitive OS such as Windows and macOS, file names are compared case-insensitively). This still holds when copy operations from the source to the destination fail: the rationale behind this choice is, that a user that turns that particular parameter on would probably want to clean up the folders at the destination from unnecessary or obsolete files, even when there are versions of the source documents (for example newer) that cause the copy operation to fail. A corollary is that a file in the destination folder will not be deleted if it exists in the source, even if its copy operation is skipped. When no source file is matched, nothing is deleted at the destination. When `keep_structure` is *false*, only the destination directory root is taken into account for deletions.
 
 Deletion takes place *after* all matching files have been copied: an error during the copy stage will abort *all* deletions when `halt_on_errors` is set.
 
@@ -259,7 +262,7 @@ Although this cannot be considered a problem, it is worth mentioning that **copy
 
 ## Output of **copyjob**
 
-**copyjob** can produce a quite verbose output when the logging level is set to *info* or above. For each job, summary lines will be written to the console reporting the number of files to copy, the number of files that will be deleted (that is, whose names in the destination directory match the source patterns, except for the ones coming from source), and at the end it will report the numbers of actually copied and/or deleted files. While executing the job, **copyjob** reports each attempted copy operation mentioning both the source and the destination files, as well as whether or not the copy operation was successful.
+**copyjob** can produce a quite verbose output when the logging level is set to *info*, *trace*, or *debug*. For each job, summary lines will be written to the console reporting the number of files to copy, the number of files that will be deleted (that is, whose names in the destination directory match the source patterns, except for the ones coming from source), and at the end it will report the numbers of actually copied and/or deleted files. While executing the job, **copyjob** reports each attempted copy operation mentioning both the source and the destination files, as well as whether or not the copy operation was successful.
 
 > [!NOTE]
 > The default *warn* level will not log the single file operations (at least *info* is needed for this), thus, a successful run will log nothing at the default log level.
@@ -299,6 +302,17 @@ where:
 * `<success specification>` can be *OK* for success, *ERR* or *FAIL* for failures, *IND* for undetermined results, *MSG* for informational messages.
 
 Some entries can be *null* depending on the record. The entries might not be in this order in actual logs, and all records are output as single lines.
+
+
+## Exit codes
+
+**copyjob** will exit with a zero exit code if no error occurred while running according to the configuration file. Otherwise:
+
+* an exit code of *2* usually indicates that execution aborted before any operations, for example because CLI parameters were incorrect or the configuration was refused;
+* an exit code of *3* means that execution has been interrupted due to errors, and **copyjob** aborted because `halt_on_errors` was set at the global level;
+* with an exit code of *4*, **copyjob** reports that some errors occurred during the execution, but the configuration allowed to continue running: in other words this code is used to identify a partially successful execution.
+
+When **copyjob** aborts before any operations, a brief error message is reported to the console (*stderr*), unless the `--quiet` flag is used.
 
 
 ## A possible use scenario

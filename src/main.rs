@@ -5,6 +5,8 @@
 use std::env;
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::AtomicI32;
+use std::sync::atomic::Ordering::Relaxed;
 
 use lazy_static::lazy_static;
 
@@ -29,6 +31,9 @@ use utility::fileops::*;
 use utility::logging::{LogType, init as log_init, log as log_base};
 use utility::pathutils::*;
 use utility::result::*;
+
+// this will hold the current error state
+static CURRENT_STATE: AtomicI32 = AtomicI32::new(ERRSTATE_OK);
 
 // Structures used for a copy job configuration and the global configuration:
 // values provided in CopyJobConfig default to the ones provided globally in
@@ -903,7 +908,7 @@ macro_rules! exit_if_fails {
                         eprintln!("{APP_NAME} error: {}", e.to_string());
                     }
                 }
-                std::process::exit(2);
+                std::process::exit(ERRSTATE_OTHER);
             }
             Ok(value) => value,
         }
@@ -1038,7 +1043,10 @@ fn main() -> std::io::Result<()> {
         if run_job(job, args.dry_run).is_err() {
             failed = true;
             if global.halt_on_errors {
+                CURRENT_STATE.store(ERRSTATE_HARD, Relaxed);
                 break;
+            } else {
+                CURRENT_STATE.store(ERRSTATE_SOFT, Relaxed);
             }
         }
     }
@@ -1054,7 +1062,7 @@ fn main() -> std::io::Result<()> {
         if let Some(handle) = handle {
             handle.flush()
         };
-        std::process::exit(2);
+        std::process::exit(CURRENT_STATE.load(Relaxed));
     } else {
         log(LogType::Debug, LOG_WHEN_END, LOG_STATUS_OK, RES_OK);
         // handle.flush();
