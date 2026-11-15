@@ -1077,6 +1077,10 @@ fn main() -> std::io::Result<()> {
     } else {
         log(LogType::Debug, LOG_WHEN_END, LOG_STATUS_OK, RES_OK);
         // handle.flush();
+        let st = CURRENT_STATE.load(Relaxed);
+        if st != ERRSTATE_OK {
+            std::process::exit(st)
+        }
         Ok(())
     }
 }
