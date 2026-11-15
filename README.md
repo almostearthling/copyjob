@@ -223,7 +223,7 @@ since the `patterns_...` parameters only accept lists as their values. Note that
 
 All other (boolean) parameters are *optional*, and when omitted will carry their default value, or the value defined at global level if present.
 
-Notice that **copyjob** is strict on job names format (for no actual reason), only accepting alphanumeric names that begin with a letter or an underscore; job names can contain underscores. Both upper and lower case letters can be used, however job names are *always* case sensitive.
+Notice that **copyjob** is strict on job names format (for no actual reason), only accepting alphanumeric names that begin with a letter or an underscore, which is also accepted in other positions. Both upper and lower case letters can be used, however job names are *always* case sensitive.
 
 
 ### Use of slashes in directories
@@ -262,7 +262,7 @@ Although this cannot be considered a problem, it is worth mentioning that **copy
 
 ## Output of **copyjob**
 
-**copyjob** can produce a quite verbose output when the logging level is set to *info*, *trace*, or *debug*. For each job, summary lines will be written to the console reporting the number of files to copy, the number of files that will be deleted (that is, whose names in the destination directory match the source patterns, except for the ones coming from source), and at the end it will report the numbers of actually copied and/or deleted files. While executing the job, **copyjob** reports each attempted copy operation mentioning both the source and the destination files, as well as whether or not the copy operation was successful.
+**copyjob** can produce a quite verbose output when the logging level is set to *info*, *debug*, or *trace*. For each job, summary lines will be written to the console reporting the number of files to copy, the number of files that will be deleted (that is, whose names in the destination directory match the source patterns, except for the ones coming from source), and at the end it will report the numbers of actually copied and/or deleted files. While executing the job, **copyjob** reports each attempted copy operation mentioning both the source and the destination files, as well as whether or not the copy operation was successful.
 
 > [!NOTE]
 > The default *warn* level will not log the single file operations (at least *info* is needed for this), thus, a successful run will log nothing at the default log level.

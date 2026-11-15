@@ -32,7 +32,8 @@ use utility::logging::{LogType, init as log_init, log as log_base};
 use utility::pathutils::*;
 use utility::result::*;
 
-// this will hold the current error state
+// this will hold the current error state: *atomic* because this utility
+// might become multithreaded in the future
 static CURRENT_STATE: AtomicI32 = AtomicI32::new(ERRSTATE_OK);
 
 // Structures used for a copy job configuration and the global configuration:
@@ -675,6 +676,8 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                     );
                     return Err(Error::new(Kind::Unknown, ERR_CANNOT_DETERMINE_DESTFILE));
                 } else {
+                    // this is a soft error anyway, so modify the state
+                    CURRENT_STATE.store(ERRSTATE_SOFT, Relaxed);
                     continue;
                 }
             }
@@ -727,6 +730,8 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                         }
                     },
                     Err(e) => {
+                        // this is a soft error anyway, so modify the state
+                        CURRENT_STATE.store(ERRSTATE_SOFT, Relaxed);
                         let msg = format!("copy failed ({e})");
                         log(
                             severity_depends_on_halt,
@@ -752,6 +757,8 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                     }
                 };
             } else {
+                // this is a soft error anyway, so modify the state
+                CURRENT_STATE.store(ERRSTATE_SOFT, Relaxed);
                 log(
                     severity_depends_on_halt,
                     LOG_ACTION_COPY,
@@ -792,6 +799,8 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                     if let Ok(p) = PathBuf::from(&item).strip_prefix(&job.destination_dir) {
                         p.to_path_buf()
                     } else {
+                        // this is a soft error anyway, so modify the state
+                        CURRENT_STATE.store(ERRSTATE_SOFT, Relaxed);
                         log(
                             severity_depends_on_halt,
                             LOG_ACTION_DEL,
@@ -846,6 +855,8 @@ fn run_job(job: &CopyJobConfig, dry_run: bool) -> Result<()> {
                         }
                     },
                     Err(e) => {
+                        // this is a soft error anyway, so modify the state
+                        CURRENT_STATE.store(ERRSTATE_SOFT, Relaxed);
                         let msg = format!("removal failed ({e})");
                         log(
                             severity_depends_on_halt,
