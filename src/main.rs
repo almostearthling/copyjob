@@ -1047,12 +1047,10 @@ fn main() -> std::io::Result<()> {
     });
 
     // run all configured and active jobs, and halt on errors if instructed to
-    let mut failed = false;
     // a hashmap for `jobs` would be better
     for jobname in global.active_jobs {
         let job = jobs.iter().find(|j| j.job_name == jobname).unwrap();
         if run_job(job, args.dry_run).is_err() {
-            failed = true;
             if global.halt_on_errors {
                 CURRENT_STATE.store(ERRSTATE_HARD, Relaxed);
                 break;
@@ -1062,7 +1060,8 @@ fn main() -> std::io::Result<()> {
         }
     }
 
-    if failed {
+    let st = CURRENT_STATE.load(Relaxed);
+    if st != ERRSTATE_OK {
         log(
             LogType::Error,
             LOG_WHEN_END,
@@ -1073,14 +1072,9 @@ fn main() -> std::io::Result<()> {
         if let Some(handle) = handle {
             handle.flush()
         };
-        std::process::exit(CURRENT_STATE.load(Relaxed));
+        std::process::exit(st);
     } else {
         log(LogType::Debug, LOG_WHEN_END, LOG_STATUS_OK, RES_OK);
-        // handle.flush();
-        let st = CURRENT_STATE.load(Relaxed);
-        if st != ERRSTATE_OK {
-            std::process::exit(st)
-        }
         Ok(())
     }
 }
